@@ -1,2 +1,2 @@
-python-telegram-bot
+python-telegram-bot[webhooks]>=22.0,<23.0
 openai
