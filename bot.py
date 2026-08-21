@@ -339,7 +339,7 @@ async def process_material(
 
         response = client.responses.create(
 
-            model="gpt-5-mini",
+            model="gpt-5.6-luna",
 
             instructions=(
                 "Ты — SmartNote AI, интеллектуальный учебный "
