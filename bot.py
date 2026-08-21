@@ -211,14 +211,14 @@ async def receive_voice(
             parse_mode="HTML"
         )
 
-    except Exception as error:
-
-        print("VOICE ERROR:", repr(error))
-
-        await update.message.reply_text(
-            "❌ Не удалось обработать голосовое сообщение.\n\n"
-            "Попробуйте отправить его ещё раз."
-        )
+    except Exception as e:
+    import traceback
+    print("❌ ERROR:", repr(e), flush=True)
+    traceback.print_exc()
+    await message.answer(
+        "❌ Произошла ошибка при обработке материала.\n\n"
+        "Попробуйте ещё раз."
+    )
 
     finally:
 
