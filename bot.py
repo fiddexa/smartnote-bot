@@ -582,19 +582,35 @@ def clean_ai_text(text):
         flags=re.MULTILINE
     )
 
-    # Убираем жирное выделение
+    # Убираем жирное Markdown
     text = text.replace("**", "")
-
-    # Заменяем Markdown-маркеры списков на обычные маркеры
-text = re.sub(
-    r"^\s*\*\s+",
-    "• ",
-    text,
-    flags=re.MULTILINE
-)
 
     # Убираем подчёркивания Markdown
     text = text.replace("__", "")
+
+    # Превращаем Markdown-списки:
+    # * текст
+    # - текст
+    # + текст
+    # в нормальные маркеры
+    lines = []
+
+    for line in text.splitlines():
+
+        stripped = line.strip()
+
+        if stripped.startswith("* "):
+            line = "• " + stripped[2:]
+
+        elif stripped.startswith("- "):
+            line = "• " + stripped[2:]
+
+        elif stripped.startswith("+ "):
+            line = "• " + stripped[2:]
+
+        lines.append(line)
+
+    text = "\n".join(lines)
 
     # Убираем горизонтальные линии
     text = re.sub(
