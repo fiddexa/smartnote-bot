@@ -18,7 +18,6 @@ from telegram.ext import (
 )
 
 from google import genai
-from openai import OpenAI
 
 
 # =========================================================
@@ -26,21 +25,24 @@ from openai import OpenAI
 # =========================================================
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 PORT = int(os.getenv("PORT", "10000"))
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 
 # =========================================================
-# ПРОВЕРКА
+# ПРОВЕРКА НАСТРОЕК
 # =========================================================
 
 if not TELEGRAM_TOKEN:
     raise RuntimeError(
         "TELEGRAM_TOKEN не найден в Render Environment Variables"
+    )
+
+if not GEMINI_API_KEY:
+    raise RuntimeError(
+        "GEMINI_API_KEY не найден в Render Environment Variables"
     )
 
 if not RENDER_EXTERNAL_URL:
@@ -50,64 +52,29 @@ if not RENDER_EXTERNAL_URL:
 
 
 # =========================================================
-# AI КЛИЕНТЫ
-# =========================================================
-
-gemini_client = None
-openrouter_client = None
-
-
-# =========================================================
 # GEMINI
 # =========================================================
 
-if GEMINI_API_KEY:
+try:
 
-    try:
+    gemini_client = genai.Client(
+        api_key=GEMINI_API_KEY
+    )
 
-        gemini_client = genai.Client(
-            api_key=GEMINI_API_KEY
-        )
+    print(
+        "✅ Gemini API подключен",
+        flush=True
+    )
 
-        print(
-            "✅ Gemini подключен",
-            flush=True
-        )
+except Exception as error:
 
-    except Exception as error:
+    print(
+        "❌ Ошибка подключения Gemini:",
+        repr(error),
+        flush=True
+    )
 
-        print(
-            "❌ Gemini initialization error:",
-            repr(error),
-            flush=True
-        )
-
-
-# =========================================================
-# OPENROUTER
-# =========================================================
-
-if OPENROUTER_API_KEY:
-
-    try:
-
-        openrouter_client = OpenAI(
-            api_key=OPENROUTER_API_KEY,
-            base_url="https://openrouter.ai/api/v1"
-        )
-
-        print(
-            "✅ OpenRouter подключен",
-            flush=True
-        )
-
-    except Exception as error:
-
-        print(
-            "❌ OpenRouter initialization error:",
-            repr(error),
-            flush=True
-        )
+    raise
 
 
 # =========================================================
@@ -115,43 +82,6 @@ if OPENROUTER_API_KEY:
 # =========================================================
 
 materials = {}
-
-
-# =========================================================
-# START
-# =========================================================
-
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    text = (
-        "🧠 <b>SmartNote AI</b>\n\n"
-
-        "Отправьте мне учебный материал "
-        "<b>текстом</b>.\n\n"
-
-        "Я превращу его в удобный "
-        "материал для обучения.\n\n"
-
-        "После отправки доступны:\n\n"
-
-        "📚 Реферат\n"
-        "📝 Конспект\n"
-        "⚡ Выжимка\n"
-        "🎯 Тезисы\n"
-        "❓ Вопросы\n"
-        "🧠 Простыми словами\n\n"
-
-        "🎤 Голосовые сообщения появятся "
-        "в следующей версии."
-    )
-
-    await update.message.reply_text(
-        text,
-        parse_mode="HTML"
-    )
 
 
 # =========================================================
@@ -167,7 +97,6 @@ def get_keyboard():
                 "📚 Реферат",
                 callback_data="referat"
             ),
-
             InlineKeyboardButton(
                 "📝 Конспект",
                 callback_data="conspect"
@@ -179,7 +108,6 @@ def get_keyboard():
                 "⚡ Выжимка",
                 callback_data="summary"
             ),
-
             InlineKeyboardButton(
                 "🎯 Тезисы",
                 callback_data="theses"
@@ -191,16 +119,58 @@ def get_keyboard():
                 "❓ Вопросы",
                 callback_data="questions"
             ),
-
             InlineKeyboardButton(
                 "🧠 Простыми словами",
                 callback_data="simple"
             ),
         ],
 
+        [
+            InlineKeyboardButton(
+                "🔄 Новый материал",
+                callback_data="new_material"
+            ),
+        ],
+
     ]
 
     return InlineKeyboardMarkup(keyboard)
+
+
+# =========================================================
+# START
+# =========================================================
+
+async def start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    text = (
+        "🧠 <b>SmartNote AI</b>\n\n"
+
+        "Ваш интеллектуальный учебный помощник.\n\n"
+
+        "📖 Отправьте мне учебный материал "
+        "<b>текстом</b>.\n\n"
+
+        "Я могу превратить его в:\n\n"
+
+        "📚 Реферат\n"
+        "📝 Конспект\n"
+        "⚡ Краткую выжимку\n"
+        "🎯 Главные тезисы\n"
+        "❓ Вопросы и ответы\n"
+        "🧠 Объяснение простыми словами\n\n"
+
+        "🎤 Голосовые сообщения будут добавлены "
+        "в следующей версии."
+    )
+
+    await update.message.reply_text(
+        text,
+        parse_mode="HTML"
+    )
 
 
 # =========================================================
@@ -217,10 +187,12 @@ async def receive_text(
         if not update.message:
             return
 
-        if not update.message.text:
+        text = update.message.text
+
+        if not text:
             return
 
-        text = update.message.text.strip()
+        text = text.strip()
 
         if not text:
             return
@@ -235,7 +207,7 @@ async def receive_text(
         )
 
         print(
-            f"📥 Получен материал",
+            "📥 Получен новый материал",
             flush=True
         )
 
@@ -258,8 +230,7 @@ async def receive_text(
 
             "✅ <b>Материал получен.</b>\n\n"
 
-            "Теперь выберите, "
-            "что нужно сделать:",
+            "Теперь выберите, что нужно сделать:",
 
             reply_markup=get_keyboard(),
 
@@ -276,20 +247,18 @@ async def receive_text(
 
         traceback.print_exc()
 
-
         await update.message.reply_text(
-            "❌ Не удалось сохранить материал."
+            "❌ Не удалось получить материал."
         )
 
 
 # =========================================================
-# PROMPTS
+# ИНСТРУКЦИИ
 # =========================================================
 
-prompts = {
+PROMPTS = {
 
-    "referat":
-        """
+    "referat": """
 Создай качественный учебный реферат
 по предоставленному материалу.
 
@@ -304,13 +273,12 @@ prompts = {
 Пиши грамотно, связно и понятно.
 
 Основывайся прежде всего
-на предоставленном материале.
+на материале пользователя.
 
 Не выдумывай факты.
 """,
 
-    "conspect":
-        """
+    "conspect": """
 Создай подробный структурированный
 учебный конспект.
 
@@ -326,10 +294,11 @@ prompts = {
 
 Сделай конспект удобным
 для изучения и повторения.
+
+Не выдумывай информацию.
 """,
 
-    "summary":
-        """
+    "summary": """
 Сделай краткую и полезную
 выжимку материала.
 
@@ -340,16 +309,18 @@ prompts = {
 и второстепенные детали.
 
 Сохрани основной смысл.
+
+Не выдумывай факты.
 """,
 
-    "theses":
-        """
+    "theses": """
 Выдели главные тезисы
 из предоставленного материала.
 
 Сделай от 5 до 20 тезисов.
 
 Каждый тезис должен быть:
+
 - коротким;
 - конкретным;
 - информативным.
@@ -357,8 +328,7 @@ prompts = {
 Не добавляй выдуманную информацию.
 """,
 
-    "questions":
-        """
+    "questions": """
 Создай вопросы для проверки знаний
 по предоставленному материалу.
 
@@ -369,10 +339,12 @@ prompts = {
 
 В конце добавь 5 наиболее важных
 вопросов для подготовки к экзамену.
+
+Ответы должны основываться
+на предоставленном материале.
 """,
 
-    "simple":
-        """
+    "simple": """
 Объясни предоставленный материал
 простыми словами.
 
@@ -382,8 +354,8 @@ prompts = {
 Сложные термины объясняй
 понятным языком.
 
-Если полезно, используй
-простые примеры.
+Если это помогает пониманию,
+используй простые примеры.
 
 Не искажай исходную информацию.
 """
@@ -391,34 +363,29 @@ prompts = {
 
 
 # =========================================================
-# ОБЩАЯ ИНСТРУКЦИЯ
+# СИСТЕМНАЯ ИНСТРУКЦИЯ
 # =========================================================
 
 SYSTEM_PROMPT = """
 Ты — SmartNote AI,
 интеллектуальный учебный ассистент.
 
-Твоя задача — помогать пользователю
-изучать предоставленный материал.
+Помогай пользователю изучать
+предоставленный им материал.
 
 Работай прежде всего
-с материалом пользователя.
+с информацией пользователя.
 
 Не выдумывай факты.
 
-Не добавляй информацию,
-которой нет в материале,
-если она не требуется
-для понятного объяснения.
-
 Если информации недостаточно,
-честно укажи это.
+не придумывай отсутствующие сведения.
 
 Отвечай на русском языке.
 
 Используй понятную структуру.
 
-Результат должен быть полезным
+Ответ должен быть полезным
 для обучения.
 """
 
@@ -431,13 +398,6 @@ async def ask_gemini(
     instruction,
     material
 ):
-
-    if not gemini_client:
-
-        raise RuntimeError(
-            "Gemini недоступен."
-        )
-
 
     prompt = (
 
@@ -457,15 +417,11 @@ async def ask_gemini(
 
     def generate():
 
-        response = (
-            gemini_client
-            .models
-            .generate_content(
+        response = gemini_client.models.generate_content(
 
-                model="gemini-2.5-flash-lite",
+            model="gemini-2.5-flash-lite",
 
-                contents=prompt
-            )
+            contents=prompt
         )
 
         return response.text
@@ -487,196 +443,35 @@ async def ask_gemini(
 
 
 # =========================================================
-# OPENROUTER FREE
+# ОТПРАВКА ДЛИННОГО ТЕКСТА
 # =========================================================
 
-async def ask_openrouter(
-    instruction,
-    material
+async def send_long_message(
+    message,
+    text
 ):
 
-    if not openrouter_client:
+    # Telegram позволяет сообщения
+    # примерно до 4096 символов.
+    # Оставляем запас.
 
-        raise RuntimeError(
-            "OpenRouter недоступен."
+    chunk_size = 3800
+
+
+    for start_index in range(
+        0,
+        len(text),
+        chunk_size
+    ):
+
+        chunk = text[
+            start_index:
+            start_index + chunk_size
+        ]
+
+        await message.reply_text(
+            chunk
         )
-
-
-    user_prompt = (
-
-        instruction
-
-        + "\n\n"
-
-        + "МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ:\n\n"
-
-        + material
-    )
-
-
-    def generate():
-
-        response = (
-            openrouter_client
-            .chat
-            .completions
-            .create(
-
-                model="openrouter/free",
-
-                messages=[
-
-                    {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT
-                    },
-
-                    {
-                        "role": "user",
-                        "content": user_prompt
-                    }
-
-                ],
-
-                temperature=0.2
-            )
-        )
-
-
-        return (
-            response
-            .choices[0]
-            .message
-            .content
-        )
-
-
-    result = await asyncio.to_thread(
-        generate
-    )
-
-
-    if not result:
-
-        raise RuntimeError(
-            "OpenRouter вернул пустой ответ."
-        )
-
-
-    return result.strip()
-
-
-# =========================================================
-# AI FALLBACK
-# =========================================================
-
-async def generate_ai_result(
-    instruction,
-    material
-):
-
-    errors = []
-
-
-    # =====================================================
-    # 1. GEMINI
-    # =====================================================
-
-    if gemini_client:
-
-        try:
-
-            print(
-                "🤖 Используем Gemini...",
-                flush=True
-            )
-
-            result = await ask_gemini(
-                instruction,
-                material
-            )
-
-            print(
-                "✅ Ответ получен через Gemini",
-                flush=True
-            )
-
-            return result
-
-        except Exception as error:
-
-            print(
-                "⚠️ Gemini ERROR:",
-                repr(error),
-                flush=True
-            )
-
-            errors.append(
-                "Gemini: "
-                + repr(error)
-            )
-
-
-    # =====================================================
-    # 2. OPENROUTER
-    # =====================================================
-
-    if openrouter_client:
-
-        try:
-
-            print(
-                "🤖 Используем OpenRouter Free...",
-                flush=True
-            )
-
-            result = await ask_openrouter(
-                instruction,
-                material
-            )
-
-            print(
-                "✅ Ответ получен через OpenRouter",
-                flush=True
-            )
-
-            return result
-
-        except Exception as error:
-
-            print(
-                "⚠️ OpenRouter ERROR:",
-                repr(error),
-                flush=True
-            )
-
-            errors.append(
-                "OpenRouter: "
-                + repr(error)
-            )
-
-
-    # =====================================================
-    # ВСЕ AI НЕДОСТУПНЫ
-    # =====================================================
-
-    print(
-        "❌ Все AI-провайдеры недоступны",
-        flush=True
-    )
-
-    for error in errors:
-
-        print(
-            error,
-            flush=True
-        )
-
-
-    raise RuntimeError(
-        "Все бесплатные AI-сервисы "
-        "временно недоступны."
-    )
 
 
 # =========================================================
@@ -694,6 +489,35 @@ async def process_material(
 
     user_id = query.from_user.id
 
+
+    # =====================================================
+    # НОВЫЙ МАТЕРИАЛ
+    # =====================================================
+
+    if query.data == "new_material":
+
+        materials.pop(
+            user_id,
+            None
+        )
+
+        await query.message.reply_text(
+
+            "🔄 <b>Готово.</b>\n\n"
+
+            "Отправьте новый учебный материал "
+            "<b>текстом</b>.",
+
+            parse_mode="HTML"
+        )
+
+        return
+
+
+    # =====================================================
+    # ПОЛУЧАЕМ МАТЕРИАЛ
+    # =====================================================
+
     material = materials.get(
         user_id
     )
@@ -704,6 +528,7 @@ async def process_material(
         await query.message.reply_text(
 
             "❗ Материал не найден.\n\n"
+
             "Сначала отправьте текст."
         )
 
@@ -712,7 +537,7 @@ async def process_material(
 
     action = query.data
 
-    instruction = prompts.get(
+    instruction = PROMPTS.get(
         action
     )
 
@@ -720,6 +545,10 @@ async def process_material(
     if not instruction:
         return
 
+
+    # =====================================================
+    # СООБЩЕНИЕ О ПРОЦЕССЕ
+    # =====================================================
 
     await query.message.reply_text(
 
@@ -738,12 +567,17 @@ async def process_material(
         )
 
         print(
-            f"🧠 Новый запрос: {action}",
+            "🧠 AI ЗАПРОС",
             flush=True
         )
 
         print(
-            f"👤 User: {user_id}",
+            f"👤 User ID: {user_id}",
+            flush=True
+        )
+
+        print(
+            f"🎯 Действие: {action}",
             flush=True
         )
 
@@ -754,7 +588,7 @@ async def process_material(
         )
 
 
-        result = await generate_ai_result(
+        result = await ask_gemini(
 
             instruction,
 
@@ -764,39 +598,21 @@ async def process_material(
 
         if not result:
 
-            await query.message.reply_text(
-                "❌ ИИ не вернул результат."
+            raise RuntimeError(
+                "Пустой результат от Gemini"
             )
 
-            return
 
+        await send_long_message(
 
-        # =================================================
-        # ОТПРАВКА ЧАСТЯМИ
-        # =================================================
+            query.message,
 
-        chunk_size = 3800
-
-
-        for start_index in range(
-            0,
-            len(result),
-            chunk_size
-        ):
-
-            chunk = result[
-                start_index:
-                start_index + chunk_size
-            ]
-
-
-            await query.message.reply_text(
-                chunk
-            )
+            result
+        )
 
 
         print(
-            "✅ Результат отправлен",
+            "✅ Результат успешно отправлен",
             flush=True
         )
 
@@ -806,10 +622,20 @@ async def process_material(
         )
 
 
+        # Кнопки после результата
+
+        await query.message.reply_text(
+
+            "Что хотите сделать дальше?",
+
+            reply_markup=get_keyboard()
+        )
+
+
     except Exception as error:
 
         print(
-            "❌ PROCESS ERROR:",
+            "❌ GEMINI ERROR:",
             repr(error),
             flush=True
         )
@@ -821,8 +647,8 @@ async def process_material(
 
             "❌ <b>Не удалось обработать материал.</b>\n\n"
 
-            "Бесплатные AI-сервисы сейчас "
-            "недоступны или достигли лимита.\n\n"
+            "Возможно, бесплатный лимит Gemini "
+            "временно достигнут.\n\n"
 
             "Попробуйте ещё раз немного позже.",
 
@@ -859,6 +685,11 @@ def main():
     )
 
     print(
+        "🤖 Gemini only",
+        flush=True
+    )
+
+    print(
         "====================================",
         flush=True
     )
@@ -876,36 +707,28 @@ def main():
     )
 
     print(
-        "Gemini:",
-        "ON" if gemini_client else "OFF",
-        flush=True
-    )
-
-    print(
-        "OpenRouter:",
-        "ON" if openrouter_client else "OFF",
-        flush=True
-    )
-
-    print(
         "====================================",
         flush=True
     )
 
 
     application = (
+
         Application
         .builder()
-        .token(TELEGRAM_TOKEN)
+        .token(
+            TELEGRAM_TOKEN
+        )
         .build()
     )
 
 
     # =====================================================
-    # START
+    # /START
     # =====================================================
 
     application.add_handler(
+
         CommandHandler(
             "start",
             start
@@ -914,10 +737,11 @@ def main():
 
 
     # =====================================================
-    # ТОЛЬКО ТЕКСТ
+    # ТЕКСТ
     # =====================================================
 
     application.add_handler(
+
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             receive_text
@@ -930,6 +754,7 @@ def main():
     # =====================================================
 
     application.add_handler(
+
         CallbackQueryHandler(
             process_material
         )
@@ -959,4 +784,5 @@ def main():
 # =========================================================
 
 if __name__ == "__main__":
+
     main()
