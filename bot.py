@@ -1358,26 +1358,14 @@ def main():
     )
 
 # =====================================================
-# PDF
+# ДОКУМЕНТЫ PDF / DOCX
 # =====================================================
 
 application.add_handler(
 
     MessageHandler(
-        filters.Document.PDF,
-        receive_pdf
-    )
-)
-
-# =====================================================
-# DOCX
-# =====================================================
-
-application.add_handler(
-
-    MessageHandler(
-        filters.Document.DOCX,
-        receive_docx
+        filters.Document.ALL,
+        receive_document
     )
 )
 
