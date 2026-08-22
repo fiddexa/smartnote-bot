@@ -19,6 +19,7 @@ from telegram.ext import (
 )
 
 from google import genai
+from google.genai import types
 
 
 # =========================================================
@@ -573,36 +574,6 @@ def clean_ai_text(text):
     if not text:
         return ""
 
-    # Убираем Markdown-заголовки
-    text = re.sub(
-        r"^\s*#{1,6}\s*",
-        "",
-        text,
-        flags=re.MULTILINE
-    )
-
-    # Убираем **жирный текст**
-    text = text.replace("**", "")
-
-    # Убираем __жирный текст__
-    text = text.replace("__", "")
-
-    # Убираем одиночные Markdown *
-    text = re.sub(
-        r"(?<!\w)\*(?!\s)",
-        "",
-        text
-    )
-
-    # Убираем лишние горизонтальные линии
-    text = re.sub(
-        r"^\s*[-_]{3,}\s*$",
-        "",
-        text,
-        flags=re.MULTILINE
-    )
-
-    # Убираем повторяющиеся пустые строки
     text = re.sub(
         r"\n{3,}",
         "\n\n",
@@ -621,21 +592,12 @@ async def ask_gemini(
     material
 ):
 
-    prompt = (
-
-        SYSTEM_PROMPT
-
+    user_prompt = (
+        instruction
         + "\n\n"
-
-        + instruction
-
-        + "\n\n"
-
         + "МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ:\n\n"
-
         + material
     )
-
 
     def generate():
 
@@ -643,7 +605,11 @@ async def ask_gemini(
 
             model="gemini-3.5-flash-lite",
 
-            contents=prompt
+            contents=user_prompt,
+
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT
+            )
         )
 
         return response.text
@@ -664,6 +630,7 @@ async def ask_gemini(
     return clean_ai_text(
         result
     )
+
 
 
 # =========================================================
