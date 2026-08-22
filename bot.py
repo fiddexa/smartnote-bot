@@ -1862,7 +1862,6 @@ def main():
     # =====================================================
 
     application.add_handler(
-
     MessageHandler(
         filters.PHOTO,
         receive_photo
