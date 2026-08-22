@@ -440,7 +440,12 @@ async def receive_photo(
         # Это надёжнее для Telegram.
         # =====================================================
 
-        batch_id = str(user_id)
+        media_group_id = update.message.media_group_id
+
+        if media_group_id:
+        batch_id = f"album_{media_group_id}"
+        else:
+        batch_id = f"single_{user_id}_{update.message.message_id}"
 
         # =====================================================
         # БЕРЁМ ФОТО МАКСИМАЛЬНОГО КАЧЕСТВА
