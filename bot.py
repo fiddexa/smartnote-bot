@@ -1701,30 +1701,11 @@ def main():
         + "/telegram"
     )
 
-    print(
-        "====================================",
-        flush=True
-    )
-
-    print(
-        "🧠 SMARTNOTE AI",
-        flush=True
-    )
-
-    print(
-        "📱 TEXT + PDF + DOCX VERSION",
-        flush=True
-    )
-
-    print(
-        "🤖 Gemini",
-        flush=True
-    )
-
-    print(
-        "====================================",
-        flush=True
-    )
+    print("====================================", flush=True)
+    print("🧠 SMARTNOTE AI", flush=True)
+    print("📱 TEXT VERSION", flush=True)
+    print("🤖 Gemini", flush=True)
+    print("====================================", flush=True)
 
     print(
         "Webhook:",
@@ -1738,17 +1719,12 @@ def main():
         flush=True
     )
 
-    print(
-        "====================================",
-        flush=True
-    )
+    print("====================================", flush=True)
 
     application = (
         Application
         .builder()
-        .token(
-            TELEGRAM_TOKEN
-        )
+        .token(TELEGRAM_TOKEN)
         .build()
     )
 
@@ -1775,30 +1751,19 @@ def main():
     )
 
     # =====================================================
-# ФОТО / OCR
-# =====================================================
-
-application.add_handler(
-
-    MessageHandler(
-        filters.PHOTO,
-        receive_photo
-    )
-)
-    # =====================================================
     # PDF / DOCX
     # =====================================================
-
-    print(
-        "📎 DOCUMENT HANDLER ENABLED",
-        flush=True
-    )
 
     application.add_handler(
         MessageHandler(
             filters.Document.ALL,
             receive_document
         )
+    )
+
+    print(
+        "📎 DOCUMENT HANDLER ENABLED",
+        flush=True
     )
 
     # =====================================================
@@ -1829,5 +1794,4 @@ application.add_handler(
 # =========================================================
 
 if __name__ == "__main__":
-
     main()
