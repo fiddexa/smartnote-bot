@@ -69,16 +69,11 @@ try:
 except Exception as error:
 
     print("====================================", flush=True)
-    print("❌ GEMINI ERROR", flush=True)
+    print("❌ GEMINI INITIALIZATION ERROR", flush=True)
     print("TYPE:", type(error).__name__, flush=True)
     print("ERROR:", str(error), flush=True)
     print("REPR:", repr(error), flush=True)
     print("====================================", flush=True)
-
-    errors.append(
-        "Gemini: "
-        + repr(error)
-    )
 
     raise
 
