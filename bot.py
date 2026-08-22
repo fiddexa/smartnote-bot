@@ -203,7 +203,187 @@ async def start(
         parse_mode="HTML"
     )
 
+# =========================================================
+# ПОЛУЧЕНИЕ PDF
+# =========================================================
 
+async def receive_pdf(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    try:
+
+        if not update.message:
+            return
+
+        document = update.message.document
+
+        if not document:
+            return
+
+        file_name = document.file_name or "document.pdf"
+
+        if not file_name.lower().endswith(".pdf"):
+
+            await update.message.reply_text(
+                "❌ Поддерживается только PDF."
+            )
+
+            return
+
+        # Ограничение 20 MB
+        if document.file_size and document.file_size > 20 * 1024 * 1024:
+
+            await update.message.reply_text(
+                "❌ PDF слишком большой.\n\n"
+                "Максимальный размер — 20 МБ."
+            )
+
+            return
+
+        await update.message.reply_text(
+            "📄 <b>Получил PDF.</b>\n\n"
+            "⏳ Извлекаю текст из документа...",
+            parse_mode="HTML"
+        )
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        print(
+            "📄 ПОЛУЧЕН PDF",
+            flush=True
+        )
+
+        print(
+            f"📎 Файл: {file_name}",
+            flush=True
+        )
+
+        print(
+            f"👤 User ID: {update.effective_user.id}",
+            flush=True
+        )
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        # Получаем файл Telegram
+        telegram_file = await document.get_file()
+
+        # Временный путь
+        file_path = f"/tmp/{update.effective_user.id}_{file_name}"
+
+        await telegram_file.download_to_drive(
+            file_path
+        )
+
+        # Извлекаем текст
+        from pypdf import PdfReader
+
+        reader = PdfReader(file_path)
+
+        pages_text = []
+
+        for page in reader.pages:
+
+            page_text = page.extract_text()
+
+            if page_text:
+                pages_text.append(
+                    page_text.strip()
+                )
+
+        material = "\n\n".join(
+            pages_text
+        ).strip()
+
+        # Удаляем временный файл
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
+
+        # Проверяем результат
+        if not material:
+
+            await update.message.reply_text(
+
+                "⚠️ <b>Не удалось извлечь текст из PDF.</b>\n\n"
+
+                "Возможно, это скан или PDF состоит "
+                "из изображений.\n\n"
+
+                "📸 В следующей версии добавим "
+                "распознавание текста с фотографий.",
+
+                parse_mode="HTML"
+            )
+
+            return
+
+        # Сохраняем материал
+        user_id = update.effective_user.id
+
+        materials[user_id] = material
+
+        print(
+            "✅ Текст PDF извлечён",
+            flush=True
+        )
+
+        print(
+            f"📄 Страниц: {len(reader.pages)}",
+            flush=True
+        )
+
+        print(
+            f"📝 Размер текста: {len(material)} символов",
+            flush=True
+        )
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        await update.message.reply_text(
+
+            "✅ <b>PDF успешно обработан.</b>\n\n"
+
+            f"📄 Файл: {file_name}\n"
+            f"📑 Страниц: {len(reader.pages)}\n"
+            f"📝 Текста извлечено: {len(material)} символов\n\n"
+
+            "Теперь выберите, что нужно сделать:",
+
+            reply_markup=get_keyboard(),
+
+            parse_mode="HTML"
+        )
+
+    except Exception as error:
+
+        print(
+            "❌ PDF ERROR:",
+            repr(error),
+            flush=True
+        )
+
+        traceback.print_exc()
+
+        await update.message.reply_text(
+
+            "❌ <b>Не удалось обработать PDF.</b>\n\n"
+            "Попробуйте другой файл.",
+
+            parse_mode="HTML"
+    )
 # =========================================================
 # ПОЛУЧЕНИЕ ТЕКСТА
 # =========================================================
@@ -1001,6 +1181,17 @@ def main():
         )
     )
 
+    # =====================================================
+# PDF
+# =====================================================
+
+application.add_handler(
+
+    MessageHandler(
+        filters.Document.PDF,
+        receive_pdf
+    )
+)
 
     # =====================================================
     # КНОПКИ
