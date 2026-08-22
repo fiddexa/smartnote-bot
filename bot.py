@@ -2,6 +2,7 @@ import os
 import asyncio
 import traceback
 import re
+import io
 
 from telegram import (
     Update,
