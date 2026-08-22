@@ -1046,17 +1046,17 @@ SmartNote AI.
 
             contents = []
 
-            # Сначала все страницы
+            # Сначала инструкция
+            contents.append(
+                prompt
+            )
+            # Затем все страницы
             for uploaded_file in uploaded_files:
 
                 contents.append(
                     uploaded_file
                 )
 
-            # Затем инструкция
-            contents.append(
-                prompt
-            )
 
             print(
                 "====================================",
