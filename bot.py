@@ -1862,20 +1862,20 @@ def main():
     # =====================================================
 
     application.add_handler(
-    MessageHandler(
-        filters.PHOTO,
-        receive_photo
-    )
+        MessageHandler(
+            filters.PHOTO,
+            receive_photo
+        )
     )
 
-        print(
+    print(
         "📸 PHOTO HANDLER ENABLED",
         flush=True
-        )
+    )
+
     # =====================================================
     # PDF / DOCX
     # =====================================================
-
     application.add_handler(
         MessageHandler(
             filters.Document.ALL,
