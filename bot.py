@@ -414,7 +414,7 @@ async def receive_pdf(
             )
 
 # =========================================================
-# ПОЛУЧЕНИЕ ФОТО / СКАНА
+# ПОЛУЧЕНИЕ ФОТО / СКАНОВ
 # =========================================================
 
 async def receive_photo(
@@ -432,27 +432,79 @@ async def receive_photo(
 
         user_id = update.effective_user.id
 
-        # Берём фотографию максимального качества
+        # =====================================================
+        # ОПРЕДЕЛЯЕМ АЛЬБОМ
+        # =====================================================
+
+        media_group_id = update.message.media_group_id
+
+        if media_group_id:
+
+            batch_id = f"{user_id}_{media_group_id}"
+
+        else:
+
+            # Для одиночной фотографии создаём уникальный ID
+            batch_id = (
+                f"{user_id}_single_"
+                f"{update.message.message_id}"
+            )
+
+        # =====================================================
+        # БЕРЁМ ФОТО МАКСИМАЛЬНОГО КАЧЕСТВА
+        # =====================================================
+
         photo = update.message.photo[-1]
 
-        # Проверяем размер
-        if photo.file_size and photo.file_size > 20 * 1024 * 1024:
+        # =====================================================
+        # ПРОВЕРКА РАЗМЕРА
+        # =====================================================
+
+        if (
+            photo.file_size
+            and photo.file_size > 20 * 1024 * 1024
+        ):
 
             await update.message.reply_text(
+
                 "❌ <b>Фотография слишком большая.</b>\n\n"
                 "Максимальный размер — 20 МБ.",
+
                 parse_mode="HTML"
             )
 
             return
 
-        await update.message.reply_text(
+        # =====================================================
+        # ПОЛУЧАЕМ ФАЙЛ
+        # =====================================================
 
-            "📸 <b>Фото получено.</b>\n\n"
-            "🧠 Распознаю текст и анализирую страницу...\n\n"
-            "⏳ Пожалуйста, подождите.",
+        telegram_file = await photo.get_file()
 
-            parse_mode="HTML"
+        image_bytes = await telegram_file.download_as_bytearray()
+
+        # =====================================================
+        # СОЗДАЁМ ПАКЕТ
+        # =====================================================
+
+        if batch_id not in photo_batches:
+
+            photo_batches[batch_id] = {
+
+                "user_id": user_id,
+
+                "images": [],
+
+                "message": update.message,
+
+            }
+
+        photo_batches[batch_id]["images"].append(
+            bytes(image_bytes)
+        )
+
+        image_count = len(
+            photo_batches[batch_id]["images"]
         )
 
         print(
@@ -471,9 +523,16 @@ async def receive_photo(
         )
 
         print(
-            f"📏 Размер: {photo.file_size}",
+            f"📷 Фото в пакете: {image_count}",
             flush=True
         )
+
+        if media_group_id:
+
+            print(
+                f"🗂 Media Group: {media_group_id}",
+                flush=True
+            )
 
         print(
             f"📐 Разрешение: "
@@ -486,68 +545,284 @@ async def receive_photo(
             flush=True
         )
 
-        # Получаем файл Telegram
-        telegram_file = await photo.get_file()
-
-        # Загружаем изображение в память
-        image_bytes = await telegram_file.download_as_bytearray()
-
         # =====================================================
-        # GEMINI — РАСПОЗНАВАНИЕ
+        # ОТМЕНЯЕМ ПРЕДЫДУЩИЙ ТАЙМЕР
         # =====================================================
 
-        def recognize_image():
+        old_task = photo_batch_tasks.get(
+            batch_id
+        )
 
-            image_part = types.Part.from_bytes(
-                data=bytes(image_bytes),
-                mime_type="image/jpeg"
+        if old_task:
+
+            old_task.cancel()
+
+        # =====================================================
+        # СОЗДАЁМ НОВЫЙ ТАЙМЕР
+        #
+        # Это позволяет Telegram сначала передать
+        # все фотографии альбома.
+        # =====================================================
+
+        async def finalize_batch():
+
+            try:
+
+                await asyncio.sleep(2.5)
+
+                await process_photo_batch(
+                    batch_id
+                )
+
+            except asyncio.CancelledError:
+
+                pass
+
+            except Exception as error:
+
+                print(
+                    "❌ PHOTO BATCH ERROR:",
+                    repr(error),
+                    flush=True
+                )
+
+                traceback.print_exc()
+
+        task = asyncio.create_task(
+            finalize_batch()
+        )
+
+        photo_batch_tasks[batch_id] = task
+
+    except Exception as error:
+
+        print(
+            "❌ PHOTO ERROR:",
+            repr(error),
+            flush=True
+        )
+
+        traceback.print_exc()
+
+        if update.message:
+
+            await update.message.reply_text(
+
+                "❌ <b>Не удалось получить фотографию.</b>\n\n"
+                "Попробуйте отправить её ещё раз.",
+
+                parse_mode="HTML"
             )
 
-            prompt = """
+
+# =========================================================
+# ОБРАБОТКА ПАКЕТА ФОТО
+# =========================================================
+
+async def process_photo_batch(
+    batch_id
+):
+
+    batch = photo_batches.get(
+        batch_id
+    )
+
+    if not batch:
+        return
+
+    user_id = batch["user_id"]
+
+    images = batch["images"]
+
+    message = batch["message"]
+
+    image_count = len(images)
+
+    print(
+        "====================================",
+        flush=True
+    )
+
+    print(
+        "🧠 ОБРАБОТКА ФОТО-ПАКЕТА",
+        flush=True
+    )
+
+    print(
+        f"👤 User ID: {user_id}",
+        flush=True
+    )
+
+    print(
+        f"📚 Количество страниц: {image_count}",
+        flush=True
+    )
+
+    print(
+        "====================================",
+        flush=True
+    )
+
+    try:
+
+        # =====================================================
+        # СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЮ
+        # =====================================================
+
+        if image_count == 1:
+
+            await message.reply_text(
+
+                "📸 <b>Фото получено.</b>\n\n"
+
+                "🧠 Распознаю текст и анализирую страницу...\n\n"
+
+                "⏳ Пожалуйста, подождите.",
+
+                parse_mode="HTML"
+            )
+
+        else:
+
+            await message.reply_text(
+
+                f"📚 <b>Получено страниц: {image_count}</b>\n\n"
+
+                "🧠 Объединяю страницы и распознаю "
+                "материал целиком...\n\n"
+
+                "⏳ Пожалуйста, подождите.",
+
+                parse_mode="HTML"
+            )
+
+        # =====================================================
+        # GEMINI OCR
+        # =====================================================
+
+        def recognize_images():
+
+            contents = []
+
+            # -------------------------------------------------
+            # Добавляем изображения в правильном порядке
+            # -------------------------------------------------
+
+            for image_bytes in images:
+
+                image_part = types.Part.from_bytes(
+
+                    data=image_bytes,
+
+                    mime_type="image/jpeg"
+
+                )
+
+                contents.append(
+                    image_part
+                )
+
+            # -------------------------------------------------
+            # Инструкция Gemini
+            # -------------------------------------------------
+
+            prompt = f"""
 Ты работаешь как модуль распознавания учебных материалов
 для SmartNote AI.
 
-Перед тобой фотография или скан страницы учебного материала.
+Перед тобой {image_count} фотографий страниц учебного
+материала.
+
+ВАЖНО:
+
+Это страницы одного материала.
+
+Распознай их как единый документ.
+
+Порядок страниц:
+
+Страница 1
+Страница 2
+Страница 3
+и так далее.
 
 Твоя задача:
 
-1. Внимательно прочитать весь текст на изображении.
-2. Извлечь максимум доступного текста.
-3. Сохранить смысл исходного материала.
-4. Сохранить заголовки, определения, списки, цифры,
-   даты, формулы и важные обозначения.
-5. Если текст расположен в несколько колонок —
-   определить правильный порядок чтения.
-6. Если есть таблица — передать её содержание
-   в понятном текстовом виде.
-7. Если часть текста невозможно прочитать,
-   не придумывай его.
-8. Не добавляй информацию от себя.
-9. Не делай реферат и не сокращай материал.
-10. Главная задача сейчас — максимально точно
-    получить содержание страницы.
+1. Внимательно прочитать весь текст на всех изображениях.
 
-Верни только распознанный текст материала.
+2. Объединить содержание всех страниц
+   в правильном порядке.
+
+3. Максимально точно сохранить исходный текст.
+
+4. Сохранять:
+   - заголовки;
+   - подзаголовки;
+   - определения;
+   - списки;
+   - даты;
+   - цифры;
+   - формулы;
+   - названия;
+   - важные обозначения.
+
+5. Если текст продолжается на следующей странице,
+   объединить его логически.
+
+6. Если есть несколько колонок,
+   определить правильный порядок чтения.
+
+7. Если есть таблица,
+   передать её содержание в понятном текстовом виде.
+
+8. Если часть текста невозможно прочитать,
+   НЕ ПРИДУМЫВАЙ его.
+
+9. Не добавляй информацию от себя.
+
+10. Не делай реферат.
+
+11. Не делай конспект.
+
+12. Не сокращай материал.
+
+13. Главная задача —
+    максимально точно распознать исходный материал.
+
+14. Не добавляй комментарии вроде:
+    "Страница распознана".
+
+15. Не добавляй пояснения от себя.
+
+Верни только единый распознанный текст.
 """
+
+            contents.append(
+                prompt
+            )
 
             response = gemini_client.models.generate_content(
 
                 model="gemini-3.5-flash-lite",
 
-                contents=[
-                    image_part,
-                    prompt
-                ],
+                contents=contents,
 
                 config=types.GenerateContentConfig(
+
                     system_instruction=SYSTEM_PROMPT
+
                 )
+
             )
 
             return response.text
 
+        # =====================================================
+        # ЗАПУСК GEMINI
+        # =====================================================
+
         material = await asyncio.to_thread(
-            recognize_image
+            recognize_images
         )
 
         if not material:
@@ -556,17 +831,22 @@ async def receive_photo(
                 "Gemini не вернул распознанный текст."
             )
 
+        # =====================================================
+        # ОЧИСТКА
+        # =====================================================
+
         material = clean_ai_text(
             material
         )
 
         if not material:
 
-            await update.message.reply_text(
+            await message.reply_text(
 
                 "⚠️ <b>Не удалось распознать текст.</b>\n\n"
-                "Попробуйте сфотографировать страницу "
-                "при хорошем освещении и без наклона.",
+
+                "Попробуйте сделать фотографии "
+                "более чёткими и при хорошем освещении.",
 
                 parse_mode="HTML"
             )
@@ -580,12 +860,18 @@ async def receive_photo(
         materials[user_id] = material
 
         print(
-            "✅ Текст с изображения распознан",
+            "✅ ФОТО-ПАКЕТ УСПЕШНО РАСПОЗНАН",
             flush=True
         )
 
         print(
-            f"📝 Размер текста: {len(material)} символов",
+            f"📚 Страниц: {image_count}",
+            flush=True
+        )
+
+        print(
+            f"📝 Размер текста: "
+            f"{len(material)} символов",
             flush=True
         )
 
@@ -594,41 +880,80 @@ async def receive_photo(
             flush=True
         )
 
-        await update.message.reply_text(
+        # =====================================================
+        # ОТВЕТ
+        # =====================================================
 
-            "✅ <b>Страница распознана.</b>\n\n"
+        if image_count == 1:
 
-            f"📝 Текста получено: "
-            f"{len(material)} символов\n\n"
+            await message.reply_text(
 
-            "Теперь выберите, что нужно сделать:",
+                "✅ <b>Страница распознана.</b>\n\n"
 
-            reply_markup=get_keyboard(),
+                f"📝 Текста получено: "
+                f"{len(material)} символов\n\n"
 
-            parse_mode="HTML"
-        )
+                "Теперь выберите, что нужно сделать:",
+
+                reply_markup=get_keyboard(),
+
+                parse_mode="HTML"
+            )
+
+        else:
+
+            await message.reply_text(
+
+                "✅ <b>Материал успешно распознан.</b>\n\n"
+
+                f"📚 Страниц обработано: {image_count}\n"
+
+                f"📝 Текста получено: "
+                f"{len(material)} символов\n\n"
+
+                "Все страницы объединены в один материал.\n\n"
+
+                "Теперь выберите, что нужно сделать:",
+
+                reply_markup=get_keyboard(),
+
+                parse_mode="HTML"
+            )
 
     except Exception as error:
 
         print(
-            "❌ PHOTO/OCR ERROR:",
+            "❌ PHOTO OCR ERROR:",
             repr(error),
             flush=True
         )
 
         traceback.print_exc()
 
-        if update.message:
+        await message.reply_text(
 
-            await update.message.reply_text(
+            "❌ <b>Не удалось обработать фотографии.</b>\n\n"
 
-                "❌ <b>Не удалось распознать фотографию.</b>\n\n"
+            "Попробуйте отправить страницы ещё раз.",
 
-                "Попробуйте сделать более чёткое фото "
-                "при хорошем освещении.",
+            parse_mode="HTML"
+        )
 
-                parse_mode="HTML"
-    )
+    finally:
+
+        # =====================================================
+        # ОЧИЩАЕМ ПАКЕТ
+        # =====================================================
+
+        photo_batches.pop(
+            batch_id,
+            None
+        )
+
+        photo_batch_tasks.pop(
+            batch_id,
+            None
+        )
 
 # =========================================================
 # ПОЛУЧЕНИЕ ТЕКСТА
