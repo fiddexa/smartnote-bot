@@ -2,3 +2,4 @@ python-telegram-bot[webhooks]>=22.0
 google-genai>=1.0.0
 pypdf
 python-docx
+Pillow
