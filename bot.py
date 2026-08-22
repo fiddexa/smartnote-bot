@@ -406,6 +406,223 @@ async def receive_pdf(
             )
 
 # =========================================================
+# ПОЛУЧЕНИЕ ФОТО / СКАНА
+# =========================================================
+
+async def receive_photo(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    try:
+
+        if not update.message:
+            return
+
+        if not update.message.photo:
+            return
+
+        user_id = update.effective_user.id
+
+        # Берём фотографию максимального качества
+        photo = update.message.photo[-1]
+
+        # Проверяем размер
+        if photo.file_size and photo.file_size > 20 * 1024 * 1024:
+
+            await update.message.reply_text(
+                "❌ <b>Фотография слишком большая.</b>\n\n"
+                "Максимальный размер — 20 МБ.",
+                parse_mode="HTML"
+            )
+
+            return
+
+        await update.message.reply_text(
+
+            "📸 <b>Фото получено.</b>\n\n"
+            "🧠 Распознаю текст и анализирую страницу...\n\n"
+            "⏳ Пожалуйста, подождите.",
+
+            parse_mode="HTML"
+        )
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        print(
+            "📸 ПОЛУЧЕНО ФОТО",
+            flush=True
+        )
+
+        print(
+            f"👤 User ID: {user_id}",
+            flush=True
+        )
+
+        print(
+            f"📏 Размер: {photo.file_size}",
+            flush=True
+        )
+
+        print(
+            f"📐 Разрешение: "
+            f"{photo.width}x{photo.height}",
+            flush=True
+        )
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        # Получаем файл Telegram
+        telegram_file = await photo.get_file()
+
+        # Загружаем изображение в память
+        image_bytes = await telegram_file.download_as_bytearray()
+
+        # =====================================================
+        # GEMINI — РАСПОЗНАВАНИЕ
+        # =====================================================
+
+        def recognize_image():
+
+            image_part = types.Part.from_bytes(
+                data=bytes(image_bytes),
+                mime_type="image/jpeg"
+            )
+
+            prompt = """
+Ты работаешь как модуль распознавания учебных материалов
+для SmartNote AI.
+
+Перед тобой фотография или скан страницы учебного материала.
+
+Твоя задача:
+
+1. Внимательно прочитать весь текст на изображении.
+2. Извлечь максимум доступного текста.
+3. Сохранить смысл исходного материала.
+4. Сохранить заголовки, определения, списки, цифры,
+   даты, формулы и важные обозначения.
+5. Если текст расположен в несколько колонок —
+   определить правильный порядок чтения.
+6. Если есть таблица — передать её содержание
+   в понятном текстовом виде.
+7. Если часть текста невозможно прочитать,
+   не придумывай его.
+8. Не добавляй информацию от себя.
+9. Не делай реферат и не сокращай материал.
+10. Главная задача сейчас — максимально точно
+    получить содержание страницы.
+
+Верни только распознанный текст материала.
+"""
+
+            response = gemini_client.models.generate_content(
+
+                model="gemini-3.5-flash-lite",
+
+                contents=[
+                    image_part,
+                    prompt
+                ],
+
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT
+                )
+            )
+
+            return response.text
+
+        material = await asyncio.to_thread(
+            recognize_image
+        )
+
+        if not material:
+
+            raise RuntimeError(
+                "Gemini не вернул распознанный текст."
+            )
+
+        material = clean_ai_text(
+            material
+        )
+
+        if not material:
+
+            await update.message.reply_text(
+
+                "⚠️ <b>Не удалось распознать текст.</b>\n\n"
+                "Попробуйте сфотографировать страницу "
+                "при хорошем освещении и без наклона.",
+
+                parse_mode="HTML"
+            )
+
+            return
+
+        # =====================================================
+        # СОХРАНЯЕМ МАТЕРИАЛ
+        # =====================================================
+
+        materials[user_id] = material
+
+        print(
+            "✅ Текст с изображения распознан",
+            flush=True
+        )
+
+        print(
+            f"📝 Размер текста: {len(material)} символов",
+            flush=True
+        )
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        await update.message.reply_text(
+
+            "✅ <b>Страница распознана.</b>\n\n"
+
+            f"📝 Текста получено: "
+            f"{len(material)} символов\n\n"
+
+            "Теперь выберите, что нужно сделать:",
+
+            reply_markup=get_keyboard(),
+
+            parse_mode="HTML"
+        )
+
+    except Exception as error:
+
+        print(
+            "❌ PHOTO/OCR ERROR:",
+            repr(error),
+            flush=True
+        )
+
+        traceback.print_exc()
+
+        if update.message:
+
+            await update.message.reply_text(
+
+                "❌ <b>Не удалось распознать фотографию.</b>\n\n"
+
+                "Попробуйте сделать более чёткое фото "
+                "при хорошем освещении.",
+
+                parse_mode="HTML"
+    )
+
+# =========================================================
 # ПОЛУЧЕНИЕ ТЕКСТА
 # =========================================================
 
@@ -1302,6 +1519,18 @@ def main():
             receive_text
         )
     )
+
+    # =====================================================
+# ФОТО / СКАНЫ
+# =====================================================
+
+application.add_handler(
+
+    MessageHandler(
+        filters.PHOTO,
+        receive_photo
+    )
+)
 
     # =====================================================
     # PDF / DOCX
