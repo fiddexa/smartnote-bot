@@ -1517,20 +1517,20 @@ def main():
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             receive_text
-        )
+    )
     )
 
     # =====================================================
-# ФОТО / СКАНЫ
-# =====================================================
+    # ФОТО / СКАНЫ
+    # =====================================================
 
-application.add_handler(
+    application.add_handler(
 
     MessageHandler(
         filters.PHOTO,
         receive_photo
     )
-)
+    )
 
     # =====================================================
     # PDF / DOCX
