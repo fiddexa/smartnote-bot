@@ -574,6 +574,29 @@ def clean_ai_text(text):
     if not text:
         return ""
 
+    # Убираем Markdown-заголовки
+    text = re.sub(
+        r"^\s*#{1,6}\s*",
+        "",
+        text,
+        flags=re.MULTILINE
+    )
+
+    # Убираем жирное выделение
+    text = text.replace("**", "")
+
+    # Убираем подчёркивания Markdown
+    text = text.replace("__", "")
+
+    # Убираем горизонтальные линии
+    text = re.sub(
+        r"^\s*[-_]{3,}\s*$",
+        "",
+        text,
+        flags=re.MULTILINE
+    )
+
+    # Убираем лишние пустые строки
     text = re.sub(
         r"\n{3,}",
         "\n\n",
