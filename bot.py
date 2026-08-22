@@ -1487,12 +1487,26 @@ application.add_handler(
             process_material
         )
     )
+# =====================================================
+# ДОКУМЕНТЫ
+# =====================================================
 
+print(
+    "📎 DOCUMENT HANDLER ENABLED",
+    flush=True
+)
+
+application.add_handler(
+
+    MessageHandler(
+        filters.Document.ALL,
+        receive_document
+    )
+)
 
     # =====================================================
     # WEBHOOK
     # =====================================================
-
     application.run_webhook(
 
         listen="0.0.0.0",
