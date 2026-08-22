@@ -1096,6 +1096,38 @@ SmartNote AI.
                 )
 
             )
+            print(
+    "====================================",
+    flush=True
+)
+
+print(
+    "🔎 GEMINI RESPONSE DIAGNOSTICS",
+    flush=True
+)
+
+print(
+    "Response type:",
+    type(response).__name__,
+    flush=True
+)
+
+print(
+    "Response text:",
+    repr(response.text),
+    flush=True
+)
+
+print(
+    "Response length:",
+    len(response.text or ""),
+    flush=True
+)
+
+print(
+    "====================================",
+    flush=True
+)
 
             if not response:
 
