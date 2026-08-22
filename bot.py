@@ -206,7 +206,115 @@ async def start(
 # =========================================================
 # ПОЛУЧЕНИЕ PDF
 # =========================================================
+# =========================================================
+# ПОЛУЧЕНИЕ ДОКУМЕНТА
+# PDF / DOCX
+# =========================================================
 
+async def receive_document(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    try:
+
+        if not update.message:
+            return
+
+        document = update.message.document
+
+        if not document:
+            return
+
+        file_name = document.file_name or ""
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        print(
+            "📎 ПОЛУЧЕН ДОКУМЕНТ",
+            flush=True
+        )
+
+        print(
+            f"📄 Имя: {file_name}",
+            flush=True
+        )
+
+        print(
+            f"📦 MIME: {document.mime_type}",
+            flush=True
+        )
+
+        print(
+            f"📏 Размер: {document.file_size}",
+            flush=True
+        )
+
+        print(
+            f"👤 User ID: {update.effective_user.id}",
+            flush=True
+        )
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        # Определяем тип файла
+
+        if file_name.lower().endswith(".pdf"):
+
+            await receive_pdf(
+                update,
+                context
+            )
+
+            return
+
+
+        if file_name.lower().endswith(".docx"):
+
+            await receive_docx(
+                update,
+                context
+            )
+
+            return
+
+
+        await update.message.reply_text(
+
+            "❌ <b>Этот формат пока не поддерживается.</b>\n\n"
+
+            "Поддерживаемые форматы:\n"
+            "📄 PDF\n"
+            "📝 DOCX",
+
+            parse_mode="HTML"
+        )
+
+    except Exception as error:
+
+        print(
+            "❌ DOCUMENT ERROR:",
+            repr(error),
+            flush=True
+        )
+
+        traceback.print_exc()
+
+        if update.message:
+
+            await update.message.reply_text(
+
+                "❌ <b>Не удалось получить документ.</b>\n\n"
+                "Попробуйте отправить файл ещё раз.",
+
+                parse_mode="HTML"
+            )
 async def receive_pdf(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
