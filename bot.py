@@ -1044,6 +1044,19 @@ SmartNote AI.
             # ФОРМИРУЕМ ОДИН ЗАПРОС
             # =================================================
 
+            print(
+    "📦 UPLOADED FILES:",
+    len(uploaded_files),
+    flush=True
+)
+
+for index, uploaded_file in enumerate(uploaded_files):
+
+    print(
+        f"🖼 FILE {index + 1}: "
+        f"{type(uploaded_file).__name__}",
+        flush=True
+    )
             contents = []
 
             # Сначала инструкция
