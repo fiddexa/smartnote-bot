@@ -1099,22 +1099,153 @@ SmartNote AI.
 
             if not response:
 
-                raise RuntimeError(
-                    "Gemini вернул пустой response."
-                )
+    raise RuntimeError(
+        "Gemini вернул пустой response."
+    )
 
-            if not response.text:
 
-                raise RuntimeError(
-                    "Gemini вернул пустой текст."
-                )
+# =================================================
+# ДИАГНОСТИКА ОТВЕТА GEMINI
+# =================================================
+
+print(
+    "====================================",
+    flush=True
+)
+
+print(
+    "🔎 GEMINI RESPONSE DIAGNOSTICS",
+    flush=True
+)
+
+print(
+    f"📄 Response text: "
+    f"{repr(response.text)}",
+    flush=True
+)
+
+
+# -------------------------------------------------
+# Prompt feedback
+# -------------------------------------------------
+
+try:
+
+    print(
+        f"🛡 Prompt feedback: "
+        f"{response.prompt_feedback}",
+        flush=True
+    )
+
+except Exception as error:
+
+    print(
+        "⚠️ Не удалось получить prompt_feedback:",
+        repr(error),
+        flush=True
+    )
+
+
+# -------------------------------------------------
+# Candidates
+# -------------------------------------------------
+
+try:
+
+    candidates = response.candidates
+
+    print(
+        f"🎯 Candidates: "
+        f"{len(candidates) if candidates else 0}",
+        flush=True
+    )
+
+    if candidates:
+
+        for index, candidate in enumerate(candidates):
 
             print(
-                "✅ Gemini вернул единый результат",
+                f"----- Candidate {index + 1} -----",
                 flush=True
             )
 
-            return response.text
+            print(
+                f"Finish reason: "
+                f"{candidate.finish_reason}",
+                flush=True
+            )
+
+            print(
+                f"Safety ratings: "
+                f"{candidate.safety_ratings}",
+                flush=True
+            )
+
+            try:
+
+                print(
+                    f"Content: "
+                    f"{candidate.content}",
+                    flush=True
+                )
+
+            except Exception:
+                pass
+
+except Exception as error:
+
+    print(
+        "⚠️ Не удалось получить candidates:",
+        repr(error),
+        flush=True
+    )
+
+
+# -------------------------------------------------
+# Usage metadata
+# -------------------------------------------------
+
+try:
+
+    print(
+        f"📊 Usage metadata: "
+        f"{response.usage_metadata}",
+        flush=True
+    )
+
+except Exception as error:
+
+    print(
+        "⚠️ Не удалось получить usage metadata:",
+        repr(error),
+        flush=True
+    )
+
+
+print(
+    "====================================",
+    flush=True
+)
+
+
+# =================================================
+# ПРОВЕРЯЕМ ТЕКСТ
+# =================================================
+
+if not response.text:
+
+    raise RuntimeError(
+        "Gemini вернул пустой текст. "
+        "Подробности выше в GEMINI RESPONSE DIAGNOSTICS."
+    )
+
+
+print(
+    "✅ Gemini вернул единый результат",
+    flush=True
+)
+
+return response.text
 
         # =====================================================
         # ЗАПУСК В ОТДЕЛЬНОМ ПОТОКЕ
