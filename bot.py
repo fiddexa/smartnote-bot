@@ -1,5 +1,4 @@
 import os
-import tempfile
 import asyncio
 import traceback
 
@@ -19,7 +18,6 @@ from telegram.ext import (
 )
 
 from google import genai
-from groq import Groq
 from openai import OpenAI
 
 
@@ -30,7 +28,6 @@ from openai import OpenAI
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 PORT = int(os.getenv("PORT", "10000"))
@@ -43,12 +40,12 @@ RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 if not TELEGRAM_TOKEN:
     raise RuntimeError(
-        "TELEGRAM_TOKEN не найден"
+        "TELEGRAM_TOKEN не найден в Render Environment Variables"
     )
 
 if not RENDER_EXTERNAL_URL:
     raise RuntimeError(
-        "RENDER_EXTERNAL_URL не найден"
+        "RENDER_EXTERNAL_URL не найден в Render Environment Variables"
     )
 
 
@@ -57,7 +54,6 @@ if not RENDER_EXTERNAL_URL:
 # =========================================================
 
 gemini_client = None
-groq_client = None
 openrouter_client = None
 
 
@@ -88,32 +84,6 @@ if GEMINI_API_KEY:
 
 
 # =========================================================
-# GROQ
-# =========================================================
-
-if GROQ_API_KEY:
-
-    try:
-
-        groq_client = Groq(
-            api_key=GROQ_API_KEY
-        )
-
-        print(
-            "✅ Groq подключен",
-            flush=True
-        )
-
-    except Exception as error:
-
-        print(
-            "❌ Groq initialization error:",
-            repr(error),
-            flush=True
-        )
-
-
-# =========================================================
 # OPENROUTER
 # =========================================================
 
@@ -127,7 +97,7 @@ if OPENROUTER_API_KEY:
         )
 
         print(
-            "✅ OpenRouter Free подключен",
+            "✅ OpenRouter подключен",
             flush=True
         )
 
@@ -141,7 +111,7 @@ if OPENROUTER_API_KEY:
 
 
 # =========================================================
-# ХРАНИЛИЩЕ
+# ХРАНИЛИЩЕ МАТЕРИАЛОВ
 # =========================================================
 
 materials = {}
@@ -159,22 +129,23 @@ async def start(
     text = (
         "🧠 <b>SmartNote AI</b>\n\n"
 
-        "Отправьте учебный материал:\n\n"
-
-        "🎤 <b>Голосовым сообщением</b>\n"
-        "📝 <b>Текстом</b>\n\n"
+        "Отправьте мне учебный материал "
+        "<b>текстом</b>.\n\n"
 
         "Я превращу его в удобный "
         "материал для обучения.\n\n"
 
-        "После загрузки доступны:\n\n"
+        "После отправки доступны:\n\n"
 
         "📚 Реферат\n"
         "📝 Конспект\n"
         "⚡ Выжимка\n"
         "🎯 Тезисы\n"
         "❓ Вопросы\n"
-        "🧠 Простыми словами"
+        "🧠 Простыми словами\n\n"
+
+        "🎤 Голосовые сообщения появятся "
+        "в следующей версии."
     )
 
     await update.message.reply_text(
@@ -246,12 +217,10 @@ async def receive_text(
         if not update.message:
             return
 
-        text = update.message.text
-
-        if not text:
+        if not update.message.text:
             return
 
-        text = text.strip()
+        text = update.message.text.strip()
 
         if not text:
             return
@@ -261,16 +230,36 @@ async def receive_text(
         materials[user_id] = text
 
         print(
-            f"📥 Материал получен. "
-            f"User={user_id}, "
-            f"Length={len(text)}",
+            "====================================",
+            flush=True
+        )
+
+        print(
+            f"📥 Получен материал",
+            flush=True
+        )
+
+        print(
+            f"👤 User ID: {user_id}",
+            flush=True
+        )
+
+        print(
+            f"📄 Размер: {len(text)} символов",
+            flush=True
+        )
+
+        print(
+            "====================================",
             flush=True
         )
 
         await update.message.reply_text(
 
             "✅ <b>Материал получен.</b>\n\n"
-            "Теперь выберите, что нужно сделать:",
+
+            "Теперь выберите, "
+            "что нужно сделать:",
 
             reply_markup=get_keyboard(),
 
@@ -288,188 +277,9 @@ async def receive_text(
         traceback.print_exc()
 
 
-# =========================================================
-# РАСПОЗНАВАНИЕ ГОЛОСА
-# =========================================================
-
-async def transcribe_voice(
-    audio_path
-):
-
-    if not groq_client:
-
-        raise RuntimeError(
-            "GROQ_API_KEY не настроен."
-        )
-
-
-    def transcribe():
-
-        with open(
-            audio_path,
-            "rb"
-        ) as audio_file:
-
-            response = (
-                groq_client
-                .audio
-                .transcriptions
-                .create(
-
-                    file=audio_file,
-
-                    model="whisper-large-v3-turbo",
-
-                    language="ru",
-
-                    response_format="json",
-
-                    temperature=0
-                )
-            )
-
-        return response.text.strip()
-
-
-    return await asyncio.to_thread(
-        transcribe
-    )
-
-
-# =========================================================
-# ПОЛУЧЕНИЕ ГОЛОСОВОГО
-# =========================================================
-
-async def receive_voice(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    if not update.message:
-        return
-
-    user_id = update.effective_user.id
-
-    await update.message.reply_text(
-
-        "🎤 <b>Голосовое получено.</b>\n\n"
-        "⏳ Распознаю речь...",
-
-        parse_mode="HTML"
-    )
-
-    voice = update.message.voice
-
-    audio_path = None
-
-    try:
-
-        telegram_file = await context.bot.get_file(
-            voice.file_id
-        )
-
-        with tempfile.NamedTemporaryFile(
-            suffix=".ogg",
-            delete=False
-        ) as temp:
-
-            audio_path = temp.name
-
-
-        await telegram_file.download_to_drive(
-            audio_path
-        )
-
-
-        print(
-            "🎤 Начинаю распознавание...",
-            flush=True
-        )
-
-
-        text = await transcribe_voice(
-            audio_path
-        )
-
-
-        if not text:
-
-            await update.message.reply_text(
-                "❌ Не удалось распознать речь."
-            )
-
-            return
-
-
-        materials[user_id] = text
-
-
-        preview = text[:3000]
-
-        if len(text) > 3000:
-
-            preview += "\n\n…"
-
-
         await update.message.reply_text(
-
-            "✅ <b>Голос успешно распознан.</b>\n\n"
-
-            "📄 <b>Распознанный текст:</b>\n\n"
-
-            + preview
-
-            + "\n\n"
-            "Выберите, что сделать с материалом:",
-
-            reply_markup=get_keyboard(),
-
-            parse_mode="HTML"
+            "❌ Не удалось сохранить материал."
         )
-
-
-        print(
-            f"✅ Голос распознан. "
-            f"Length={len(text)}",
-            flush=True
-        )
-
-
-    except Exception as error:
-
-        print(
-            "❌ VOICE ERROR:",
-            repr(error),
-            flush=True
-        )
-
-        traceback.print_exc()
-
-
-        await update.message.reply_text(
-
-            "❌ Не удалось распознать голос.\n\n"
-
-            "Возможно, бесплатный лимит "
-            "распознавания Groq временно исчерпан.\n\n"
-
-            "Попробуйте позже."
-        )
-
-
-    finally:
-
-        if (
-            audio_path
-            and os.path.exists(audio_path)
-        ):
-
-            try:
-
-                os.remove(audio_path)
-
-            except Exception:
-                pass
 
 
 # =========================================================
@@ -480,7 +290,8 @@ prompts = {
 
     "referat":
         """
-Создай качественный учебный реферат.
+Создай качественный учебный реферат
+по предоставленному материалу.
 
 Структура:
 
@@ -490,65 +301,71 @@ prompts = {
 4. Основные идеи
 5. Заключение
 
-Пиши грамотно и понятно.
+Пиши грамотно, связно и понятно.
 
 Основывайся прежде всего
-на материале пользователя.
+на предоставленном материале.
 
 Не выдумывай факты.
 """,
 
     "conspect":
         """
-Создай подробный структурированный конспект.
+Создай подробный структурированный
+учебный конспект.
 
 Используй:
 
 - заголовки;
 - подзаголовки;
-- маркированные пункты;
 - определения;
 - важные факты;
+- маркированные пункты;
 - причинно-следственные связи;
 - выводы.
 
-Конспект должен быть удобен
-для изучения.
+Сделай конспект удобным
+для изучения и повторения.
 """,
 
     "summary":
         """
-Сделай краткую и полезную выжимку.
+Сделай краткую и полезную
+выжимку материала.
 
-Оставь только действительно
-важную информацию.
+Оставь только самую важную
+информацию.
 
-Убери повторы
+Удали повторы
 и второстепенные детали.
 
-Сохрани смысл материала.
+Сохрани основной смысл.
 """,
 
     "theses":
         """
-Выдели главные тезисы.
+Выдели главные тезисы
+из предоставленного материала.
 
-Сделай от 5 до 20
-коротких и информативных тезисов.
+Сделай от 5 до 20 тезисов.
 
-Каждый тезис должен передавать
-отдельную важную мысль.
+Каждый тезис должен быть:
+- коротким;
+- конкретным;
+- информативным.
+
+Не добавляй выдуманную информацию.
 """,
 
     "questions":
         """
-Создай вопросы для проверки знаний.
+Создай вопросы для проверки знаний
+по предоставленному материалу.
 
-Сделай вопросы
-разного уровня сложности.
+Сделай вопросы разного уровня сложности.
 
 После каждого вопроса
-дай правильный ответ.
+укажи правильный ответ.
 
 В конце добавь 5 наиболее важных
 вопросов для подготовки к экзамену.
@@ -556,7 +373,8 @@ prompts = {
 
     "simple":
         """
-Объясни материал простыми словами.
+Объясни предоставленный материал
+простыми словами.
 
 Представь, что человек
 впервые изучает эту тему.
@@ -564,8 +382,8 @@ prompts = {
 Сложные термины объясняй
 понятным языком.
 
-Используй простые примеры,
-если они помогают понять тему.
+Если полезно, используй
+простые примеры.
 
 Не искажай исходную информацию.
 """
@@ -577,23 +395,30 @@ prompts = {
 # =========================================================
 
 SYSTEM_PROMPT = """
-
 Ты — SmartNote AI,
 интеллектуальный учебный ассистент.
+
+Твоя задача — помогать пользователю
+изучать предоставленный материал.
 
 Работай прежде всего
 с материалом пользователя.
 
 Не выдумывай факты.
 
+Не добавляй информацию,
+которой нет в материале,
+если она не требуется
+для понятного объяснения.
+
 Если информации недостаточно,
-не придумывай отсутствующие сведения.
+честно укажи это.
 
 Отвечай на русском языке.
 
 Используй понятную структуру.
 
-Результат должен быть полезен
+Результат должен быть полезным
 для обучения.
 """
 
@@ -633,7 +458,6 @@ async def ask_gemini(
     def generate():
 
         response = (
-
             gemini_client
             .models
             .generate_content(
@@ -656,87 +480,6 @@ async def ask_gemini(
 
         raise RuntimeError(
             "Gemini вернул пустой ответ."
-        )
-
-
-    return result.strip()
-
-
-# =========================================================
-# GROQ
-# =========================================================
-
-async def ask_groq(
-    instruction,
-    material
-):
-
-    if not groq_client:
-
-        raise RuntimeError(
-            "Groq недоступен."
-        )
-
-
-    user_prompt = (
-
-        instruction
-
-        + "\n\n"
-
-        + "МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ:\n\n"
-
-        + material
-    )
-
-
-    def generate():
-
-        response = (
-
-            groq_client
-            .chat
-            .completions
-            .create(
-
-                model="llama-3.3-70b-versatile",
-
-                messages=[
-
-                    {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT
-                    },
-
-                    {
-                        "role": "user",
-                        "content": user_prompt
-                    }
-
-                ],
-
-                temperature=0.2
-            )
-        )
-
-
-        return (
-            response
-            .choices[0]
-            .message
-            .content
-        )
-
-
-    result = await asyncio.to_thread(
-        generate
-    )
-
-
-    if not result:
-
-        raise RuntimeError(
-            "Groq вернул пустой ответ."
         )
 
 
@@ -774,7 +517,6 @@ async def ask_openrouter(
     def generate():
 
         response = (
-
             openrouter_client
             .chat
             .completions
@@ -837,7 +579,7 @@ async def generate_ai_result(
 
 
     # =====================================================
-    # 1 — GEMINI
+    # 1. GEMINI
     # =====================================================
 
     if gemini_client:
@@ -845,19 +587,26 @@ async def generate_ai_result(
         try:
 
             print(
-                "🤖 AI 1: Gemini",
+                "🤖 Используем Gemini...",
                 flush=True
             )
 
-            return await ask_gemini(
+            result = await ask_gemini(
                 instruction,
                 material
             )
 
+            print(
+                "✅ Ответ получен через Gemini",
+                flush=True
+            )
+
+            return result
+
         except Exception as error:
 
             print(
-                "⚠️ Gemini ошибка:",
+                "⚠️ Gemini ERROR:",
                 repr(error),
                 flush=True
             )
@@ -869,39 +618,7 @@ async def generate_ai_result(
 
 
     # =====================================================
-    # 2 — GROQ
-    # =====================================================
-
-    if groq_client:
-
-        try:
-
-            print(
-                "🤖 AI 2: Groq",
-                flush=True
-            )
-
-            return await ask_groq(
-                instruction,
-                material
-            )
-
-        except Exception as error:
-
-            print(
-                "⚠️ Groq ошибка:",
-                repr(error),
-                flush=True
-            )
-
-            errors.append(
-                "Groq: "
-                + repr(error)
-            )
-
-
-    # =====================================================
-    # 3 — OPENROUTER FREE
+    # 2. OPENROUTER
     # =====================================================
 
     if openrouter_client:
@@ -909,19 +626,26 @@ async def generate_ai_result(
         try:
 
             print(
-                "🤖 AI 3: OpenRouter Free",
+                "🤖 Используем OpenRouter Free...",
                 flush=True
             )
 
-            return await ask_openrouter(
+            result = await ask_openrouter(
                 instruction,
                 material
             )
 
+            print(
+                "✅ Ответ получен через OpenRouter",
+                flush=True
+            )
+
+            return result
+
         except Exception as error:
 
             print(
-                "⚠️ OpenRouter ошибка:",
+                "⚠️ OpenRouter ERROR:",
                 repr(error),
                 flush=True
             )
@@ -933,11 +657,11 @@ async def generate_ai_result(
 
 
     # =====================================================
-    # НИ ОДИН НЕ СРАБОТАЛ
+    # ВСЕ AI НЕДОСТУПНЫ
     # =====================================================
 
     print(
-        "❌ Все AI недоступны",
+        "❌ Все AI-провайдеры недоступны",
         flush=True
     )
 
@@ -950,7 +674,7 @@ async def generate_ai_result(
 
 
     raise RuntimeError(
-        "Все бесплатные AI-провайдеры "
+        "Все бесплатные AI-сервисы "
         "временно недоступны."
     )
 
@@ -968,7 +692,6 @@ async def process_material(
 
     await query.answer()
 
-
     user_id = query.from_user.id
 
     material = materials.get(
@@ -980,8 +703,8 @@ async def process_material(
 
         await query.message.reply_text(
 
-            "❗ Сначала отправьте "
-            "текст или голосовое сообщение."
+            "❗ Материал не найден.\n\n"
+            "Сначала отправьте текст."
         )
 
         return
@@ -1015,7 +738,7 @@ async def process_material(
         )
 
         print(
-            f"🧠 Запрос: {action}",
+            f"🧠 Новый запрос: {action}",
             flush=True
         )
 
@@ -1025,7 +748,8 @@ async def process_material(
         )
 
         print(
-            f"📄 Размер: {len(material)} символов",
+            f"📄 Размер материала: "
+            f"{len(material)} символов",
             flush=True
         )
 
@@ -1036,6 +760,15 @@ async def process_material(
 
             material
         )
+
+
+        if not result:
+
+            await query.message.reply_text(
+                "❌ ИИ не вернул результат."
+            )
+
+            return
 
 
         # =================================================
@@ -1063,7 +796,7 @@ async def process_material(
 
 
         print(
-            "✅ Ответ отправлен",
+            "✅ Результат отправлен",
             flush=True
         )
 
@@ -1121,6 +854,11 @@ def main():
     )
 
     print(
+        "📱 TEXT VERSION",
+        flush=True
+    )
+
+    print(
         "====================================",
         flush=True
     )
@@ -1144,12 +882,6 @@ def main():
     )
 
     print(
-        "Groq:",
-        "ON" if groq_client else "OFF",
-        flush=True
-    )
-
-    print(
         "OpenRouter:",
         "ON" if openrouter_client else "OFF",
         flush=True
@@ -1162,21 +894,18 @@ def main():
 
 
     application = (
-
-        Application.builder()
-
-        .token(
-            TELEGRAM_TOKEN
-        )
-
+        Application
+        .builder()
+        .token(TELEGRAM_TOKEN)
         .build()
     )
 
 
+    # =====================================================
     # START
+    # =====================================================
 
     application.add_handler(
-
         CommandHandler(
             "start",
             start
@@ -1184,40 +913,32 @@ def main():
     )
 
 
-    # VOICE
+    # =====================================================
+    # ТОЛЬКО ТЕКСТ
+    # =====================================================
 
     application.add_handler(
-
         MessageHandler(
-            filters.VOICE,
-            receive_voice
-        )
-    )
-
-
-    # TEXT
-
-    application.add_handler(
-
-        MessageHandler(
-            filters.TEXT
-            & ~filters.COMMAND,
+            filters.TEXT & ~filters.COMMAND,
             receive_text
         )
     )
 
 
-    # BUTTONS
+    # =====================================================
+    # КНОПКИ
+    # =====================================================
 
     application.add_handler(
-
         CallbackQueryHandler(
             process_material
         )
     )
 
 
+    # =====================================================
     # WEBHOOK
+    # =====================================================
 
     application.run_webhook(
 
@@ -1238,5 +959,4 @@ def main():
 # =========================================================
 
 if __name__ == "__main__":
-
     main()
