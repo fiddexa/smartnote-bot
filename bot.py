@@ -1380,11 +1380,9 @@ async def process_material(
 def main():
 
     webhook_url = (
-
         RENDER_EXTERNAL_URL.rstrip("/")
         + "/telegram"
     )
-
 
     print(
         "====================================",
@@ -1397,7 +1395,7 @@ def main():
     )
 
     print(
-        "📱 TEXT VERSION",
+        "📱 TEXT + PDF + DOCX VERSION",
         flush=True
     )
 
@@ -1428,9 +1426,7 @@ def main():
         flush=True
     )
 
-
     application = (
-
         Application
         .builder()
         .token(
@@ -1439,84 +1435,63 @@ def main():
         .build()
     )
 
-
     # =====================================================
     # START
     # =====================================================
 
     application.add_handler(
-
         CommandHandler(
             "start",
             start
         )
     )
 
-
     # =====================================================
     # ТЕКСТ
     # =====================================================
 
     application.add_handler(
-
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             receive_text
         )
     )
 
-# =====================================================
-# ДОКУМЕНТЫ PDF / DOCX
-# =====================================================
+    # =====================================================
+    # PDF / DOCX
+    # =====================================================
 
-application.add_handler(
-
-    MessageHandler(
-        filters.Document.ALL,
-        receive_document
+    print(
+        "📎 DOCUMENT HANDLER ENABLED",
+        flush=True
     )
-)
+
+    application.add_handler(
+        MessageHandler(
+            filters.Document.ALL,
+            receive_document
+        )
+    )
 
     # =====================================================
     # КНОПКИ
     # =====================================================
 
     application.add_handler(
-
         CallbackQueryHandler(
             process_material
         )
     )
-# =====================================================
-# ДОКУМЕНТЫ
-# =====================================================
-
-print(
-    "📎 DOCUMENT HANDLER ENABLED",
-    flush=True
-)
-
-application.add_handler(
-
-    MessageHandler(
-        filters.Document.ALL,
-        receive_document
-    )
-)
 
     # =====================================================
     # WEBHOOK
     # =====================================================
+
     application.run_webhook(
-
         listen="0.0.0.0",
-
         port=PORT,
-
         url_path="telegram",
-
         webhook_url=webhook_url,
-
         drop_pending_updates=True
     )
 
