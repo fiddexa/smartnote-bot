@@ -266,7 +266,6 @@ async def receive_document(
                 parse_mode="HTML"
             )
 
-        
 async def receive_pdf(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
@@ -292,7 +291,6 @@ async def receive_pdf(
 
             return
 
-        # Ограничение 20 MB
         if document.file_size and document.file_size > 20 * 1024 * 1024:
 
             await update.message.reply_text(
@@ -308,42 +306,27 @@ async def receive_pdf(
             parse_mode="HTML"
         )
 
-        print(
-            "====================================",
-            flush=True
-        )
-
-        print(
-            "📄 ПОЛУЧЕН PDF",
-            flush=True
-        )
-
-        print(
-            f"📎 Файл: {file_name}",
-            flush=True
-        )
-
+        print("====================================", flush=True)
+        print("📄 ПОЛУЧЕН PDF", flush=True)
+        print(f"📎 Файл: {file_name}", flush=True)
         print(
             f"👤 User ID: {update.effective_user.id}",
             flush=True
         )
+        print("====================================", flush=True)
 
-        print(
-            "====================================",
-            flush=True
-        )
-
-        # Получаем файл Telegram
         telegram_file = await document.get_file()
 
-        # Временный путь
-        file_path = f"/tmp/{update.effective_user.id}_{file_name}"
+        file_path = (
+            f"/tmp/"
+            f"{update.effective_user.id}_"
+            f"{file_name}"
+        )
 
         await telegram_file.download_to_drive(
             file_path
         )
 
-        # Извлекаем текст
         from pypdf import PdfReader
 
         reader = PdfReader(file_path)
@@ -363,126 +346,44 @@ async def receive_pdf(
             pages_text
         ).strip()
 
-                # Проверяем результат
-        if not material:
-
-                # =================================================
-        # OCR ДЛЯ СКАНИРОВАННОГО PDF
-        # =================================================
-
-        if not material:
-
-            await update.message.reply_text(
-
-                "📸 <b>Это сканированный PDF.</b>\n\n"
-                "🧠 Передаю страницы в Gemini "
-                "для распознавания текста...\n\n"
-                "⏳ Пожалуйста, подождите.",
-
-                parse_mode="HTML"
-            )
-
-            print(
-                "📸 PDF OCR: запускаю Gemini",
-                flush=True
-            )
-
-            uploaded_pdf = gemini_client.files.upload(
-                file=file_path
-            )
-
-            def recognize_pdf():
-
-                response = gemini_client.models.generate_content(
-
-                    model="gemini-3.5-flash-lite",
-
-                    contents=[
-                        uploaded_pdf,
-
-                        """
-Это сканированный учебный PDF-документ.
-
-Распознай весь текст документа.
-
-ВАЖНЫЕ ПРАВИЛА:
-
-1. Распознай все страницы.
-2. Сохраняй порядок страниц.
-3. Сохраняй заголовки.
-4. Сохраняй списки.
-5. Сохраняй номера пунктов.
-6. Сохраняй абзацы.
-7. Сохраняй таблицы настолько хорошо,
-   насколько это возможно в обычном тексте.
-8. Не пересказывай документ.
-9. Не сокращай текст.
-10. Не добавляй информацию от себя.
-11. Если какой-либо фрагмент невозможно прочитать,
-    не выдумывай его.
-
-Верни только распознанный текст документа.
-"""
-                    ]
-                )
-
-                return response.text
-
-            material = await asyncio.to_thread(
-                recognize_pdf
-            )
-
-            if material:
-                material = material.strip()
-
-            print(
-                f"📸 PDF OCR завершён: "
-                f"{len(material) if material else 0} символов",
-                flush=True
-            )
-
-                # Удаляем временный файл
         try:
             os.remove(file_path)
         except Exception:
             pass
-        # Сохраняем материал
+
+        if not material:
+
+            await update.message.reply_text(
+                "⚠️ <b>Не удалось извлечь текст из PDF.</b>\n\n"
+                "Возможно, PDF является сканом или "
+                "содержит только изображения.",
+                parse_mode="HTML"
+            )
+
+            return
+
         user_id = update.effective_user.id
 
         materials[user_id] = material
 
-        print(
-            "✅ Текст PDF извлечён",
-            flush=True
-        )
-
+        print("✅ Текст PDF извлечён", flush=True)
         print(
             f"📄 Страниц: {len(reader.pages)}",
             flush=True
         )
-
         print(
             f"📝 Размер текста: {len(material)} символов",
             flush=True
         )
-
-        print(
-            "====================================",
-            flush=True
-        )
+        print("====================================", flush=True)
 
         await update.message.reply_text(
-
             "✅ <b>PDF успешно обработан.</b>\n\n"
-
             f"📄 Файл: {file_name}\n"
             f"📑 Страниц: {len(reader.pages)}\n"
             f"📝 Текста извлечено: {len(material)} символов\n\n"
-
             "Теперь выберите, что нужно сделать:",
-
             reply_markup=get_keyboard(),
-
             parse_mode="HTML"
         )
 
@@ -496,319 +397,14 @@ async def receive_pdf(
 
         traceback.print_exc()
 
-        await update.message.reply_text(
-
-            "❌ <b>Не удалось обработать PDF.</b>\n\n"
-            "Попробуйте другой файл.",
-
-            parse_mode="HTML"
-    )
-
-# =========================================================
-# ПОЛУЧЕНИЕ ФОТО / OCR
-# =========================================================
-
-async def receive_photo(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    try:
-
-        if not update.message:
-            return
-
-        if not update.message.photo:
-            return
-
-        await update.message.reply_text(
-            "📸 <b>Фото получено.</b>\n\n"
-            "🧠 Распознаю текст...",
-            parse_mode="HTML"
-        )
-
-        user_id = update.effective_user.id
-
-        # Берём фотографию максимального качества
-        photo = update.message.photo[-1]
-
-        telegram_file = await photo.get_file()
-
-        file_path = (
-            f"/tmp/"
-            f"{user_id}_ocr.jpg"
-        )
-
-        await telegram_file.download_to_drive(
-            file_path
-        )
-
-        print(
-            "====================================",
-            flush=True
-        )
-
-        print(
-            "📸 OCR ФОТО",
-            flush=True
-        )
-
-        print(
-            f"👤 User ID: {user_id}",
-            flush=True
-        )
-
-        print(
-            f"📄 Файл: {file_path}",
-            flush=True
-        )
-
-        print(
-            "====================================",
-            flush=True
-        )
-
-        # Загружаем изображение в Gemini
-        uploaded_file = gemini_client.files.upload(
-            file=file_path
-        )
-
-        # Просим Gemini только распознать текст
-        def recognize():
-
-            response = gemini_client.models.generate_content(
-
-                model="gemini-3.5-flash-lite",
-
-                contents=[
-                    uploaded_file,
-
-                    """
-Распознай весь текст на изображении.
-
-ВАЖНЫЕ ПРАВИЛА:
-
-1. Перепиши весь читаемый текст.
-2. Сохраняй исходный язык.
-3. Сохраняй порядок текста.
-4. Сохраняй заголовки.
-5. Сохраняй списки.
-6. Сохраняй номера пунктов.
-7. Не пересказывай текст.
-8. Не сокращай текст.
-9. Не добавляй информацию от себя.
-10. Если часть текста невозможно прочитать,
-не выдумывай её.
-
-Верни только распознанный текст.
-"""
-                ],
-
-            )
-
-            return response.text
-
-        material = await asyncio.to_thread(
-            recognize
-        )
-
-        # Удаляем временный файл
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass
-
-        if not material:
-
-            await update.message.reply_text(
-                "⚠️ Не удалось распознать текст на фотографии."
-            )
-
-            return
-
-        material = material.strip()
-
-        # Сохраняем материал
-        materials[user_id] = material
-
-        print(
-            "✅ OCR успешно завершён",
-            flush=True
-        )
-
-        print(
-            f"📝 Размер текста: {len(material)} символов",
-            flush=True
-        )
-
-        print(
-            "====================================",
-            flush=True
-        )
-
-        await update.message.reply_text(
-
-            "✅ <b>Текст с фотографии распознан.</b>\n\n"
-
-            f"📝 Извлечено символов: {len(material)}\n\n"
-
-            "Теперь выберите, что нужно сделать:",
-
-            reply_markup=get_keyboard(),
-
-            parse_mode="HTML"
-        )
-
-    except Exception as error:
-
-        print(
-            "❌ OCR ERROR:",
-            repr(error),
-            flush=True
-        )
-
-        traceback.print_exc()
-
         if update.message:
 
             await update.message.reply_text(
-
-                "❌ <b>Не удалось распознать текст.</b>\n\n"
-                "Попробуйте отправить фотографию ещё раз.",
-
+                "❌ <b>Не удалось обработать PDF.</b>\n\n"
+                "Попробуйте другой файл.",
                 parse_mode="HTML"
             )
 
-# =========================================================
-# ПОЛУЧЕНИЕ ИЗОБРАЖЕНИЯ КАК ФАЙЛА
-# =========================================================
-
-async def receive_image_document(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    try:
-
-        if not update.message:
-            return
-
-        document = update.message.document
-
-        if not document:
-            return
-
-        file_name = document.file_name or "image.jpg"
-
-        await update.message.reply_text(
-            "🖼️ <b>Изображение получено.</b>\n\n"
-            "🧠 Распознаю текст...",
-            parse_mode="HTML"
-        )
-
-        user_id = update.effective_user.id
-
-        telegram_file = await document.get_file()
-
-        file_path = (
-            f"/tmp/"
-            f"{user_id}_"
-            f"{file_name}"
-        )
-
-        await telegram_file.download_to_drive(
-            file_path
-        )
-
-        print(
-            "📸 IMAGE DOCUMENT OCR",
-            flush=True
-        )
-
-        uploaded_file = gemini_client.files.upload(
-            file=file_path
-        )
-
-        def recognize():
-
-            response = gemini_client.models.generate_content(
-
-                model="gemini-3.5-flash-lite",
-
-                contents=[
-                    uploaded_file,
-
-                    """
-Распознай весь текст на изображении.
-
-Перепиши его полностью.
-
-Сохраняй:
-- язык;
-- заголовки;
-- списки;
-- номера;
-- порядок текста.
-
-Не пересказывай.
-Не сокращай.
-Не добавляй информацию.
-Не выдумывай нечитаемые фрагменты.
-
-Верни только распознанный текст.
-"""
-                ]
-            )
-
-            return response.text
-
-        material = await asyncio.to_thread(
-            recognize
-        )
-
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass
-
-        if not material:
-
-            await update.message.reply_text(
-                "⚠️ Не удалось распознать текст."
-            )
-
-            return
-
-        material = material.strip()
-
-        materials[user_id] = material
-
-        await update.message.reply_text(
-
-            "✅ <b>Текст изображения распознан.</b>\n\n"
-
-            f"📝 Извлечено символов: {len(material)}\n\n"
-
-            "Теперь выберите, что нужно сделать:",
-
-            reply_markup=get_keyboard(),
-
-            parse_mode="HTML"
-        )
-
-    except Exception as error:
-
-        print(
-            "❌ IMAGE OCR ERROR:",
-            repr(error),
-            flush=True
-        )
-
-        traceback.print_exc()
-
-        await update.message.reply_text(
-            "❌ Не удалось распознать изображение."
-        )
 # =========================================================
 # ПОЛУЧЕНИЕ ТЕКСТА
 # =========================================================
@@ -892,7 +488,6 @@ async def receive_text(
 # =========================================================
 # ПОЛУЧЕНИЕ DOCX
 # =========================================================
-
 async def receive_docx(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
@@ -918,7 +513,6 @@ async def receive_docx(
 
             return
 
-        # Ограничение 20 МБ
         if document.file_size and document.file_size > 20 * 1024 * 1024:
 
             await update.message.reply_text(
@@ -929,42 +523,22 @@ async def receive_docx(
             return
 
         await update.message.reply_text(
-
             "📄 <b>Получил DOCX.</b>\n\n"
             "⏳ Извлекаю текст из документа...",
-
             parse_mode="HTML"
         )
 
-        print(
-            "====================================",
-            flush=True
-        )
-
-        print(
-            "📄 ПОЛУЧЕН DOCX",
-            flush=True
-        )
-
-        print(
-            f"📎 Файл: {file_name}",
-            flush=True
-        )
-
+        print("====================================", flush=True)
+        print("📄 ПОЛУЧЕН DOCX", flush=True)
+        print(f"📎 Файл: {file_name}", flush=True)
         print(
             f"👤 User ID: {update.effective_user.id}",
             flush=True
         )
+        print("====================================", flush=True)
 
-        print(
-            "====================================",
-            flush=True
-        )
-
-        # Получаем файл Telegram
         telegram_file = await document.get_file()
 
-        # Временный путь
         file_path = (
             f"/tmp/"
             f"{update.effective_user.id}_"
@@ -975,12 +549,9 @@ async def receive_docx(
             file_path
         )
 
-        # Извлекаем текст DOCX
         from docx import Document
 
-        doc = Document(
-            file_path
-        )
+        doc = Document(file_path)
 
         paragraphs = []
 
@@ -995,56 +566,38 @@ async def receive_docx(
             paragraphs
         ).strip()
 
-        # Удаляем временный файл
         try:
             os.remove(file_path)
         except Exception:
             pass
 
-        # Проверяем результат
         if not material:
 
             await update.message.reply_text(
-
                 "⚠️ <b>DOCX не содержит доступного текста.</b>\n\n"
                 "Попробуйте другой документ.",
-
                 parse_mode="HTML"
             )
 
             return
 
-        # Сохраняем материал
         user_id = update.effective_user.id
 
         materials[user_id] = material
 
-        print(
-            "✅ Текст DOCX извлечён",
-            flush=True
-        )
-
+        print("✅ Текст DOCX извлечён", flush=True)
         print(
             f"📝 Размер текста: {len(material)} символов",
             flush=True
         )
-
-        print(
-            "====================================",
-            flush=True
-        )
+        print("====================================", flush=True)
 
         await update.message.reply_text(
-
             "✅ <b>DOCX успешно обработан.</b>\n\n"
-
             f"📄 Файл: {file_name}\n"
             f"📝 Текста извлечено: {len(material)} символов\n\n"
-
             "Теперь выберите, что нужно сделать:",
-
             reply_markup=get_keyboard(),
-
             parse_mode="HTML"
         )
 
@@ -1058,13 +611,13 @@ async def receive_docx(
 
         traceback.print_exc()
 
-        await update.message.reply_text(
+        if update.message:
 
-            "❌ <b>Не удалось обработать DOCX.</b>\n\n"
-            "Попробуйте другой файл.",
-
-            parse_mode="HTML"
-        )
+            await update.message.reply_text(
+                "❌ <b>Не удалось обработать DOCX.</b>\n\n"
+                "Попробуйте другой файл.",
+                parse_mode="HTML"
+            )
 
 # =========================================================
 # ИНСТРУКЦИИ ДЛЯ РЕЖИМОВ
