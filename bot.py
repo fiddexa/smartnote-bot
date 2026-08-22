@@ -464,6 +464,182 @@ async def receive_text(
                 "❌ Не удалось получить материал."
             )
 
+# =========================================================
+# ПОЛУЧЕНИЕ DOCX
+# =========================================================
+
+async def receive_docx(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    try:
+
+        if not update.message:
+            return
+
+        document = update.message.document
+
+        if not document:
+            return
+
+        file_name = document.file_name or "document.docx"
+
+        if not file_name.lower().endswith(".docx"):
+
+            await update.message.reply_text(
+                "❌ Поддерживается только DOCX."
+            )
+
+            return
+
+        # Ограничение 20 МБ
+        if document.file_size and document.file_size > 20 * 1024 * 1024:
+
+            await update.message.reply_text(
+                "❌ DOCX слишком большой.\n\n"
+                "Максимальный размер — 20 МБ."
+            )
+
+            return
+
+        await update.message.reply_text(
+
+            "📄 <b>Получил DOCX.</b>\n\n"
+            "⏳ Извлекаю текст из документа...",
+
+            parse_mode="HTML"
+        )
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        print(
+            "📄 ПОЛУЧЕН DOCX",
+            flush=True
+        )
+
+        print(
+            f"📎 Файл: {file_name}",
+            flush=True
+        )
+
+        print(
+            f"👤 User ID: {update.effective_user.id}",
+            flush=True
+        )
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        # Получаем файл Telegram
+        telegram_file = await document.get_file()
+
+        # Временный путь
+        file_path = (
+            f"/tmp/"
+            f"{update.effective_user.id}_"
+            f"{file_name}"
+        )
+
+        await telegram_file.download_to_drive(
+            file_path
+        )
+
+        # Извлекаем текст DOCX
+        from docx import Document
+
+        doc = Document(
+            file_path
+        )
+
+        paragraphs = []
+
+        for paragraph in doc.paragraphs:
+
+            text = paragraph.text.strip()
+
+            if text:
+                paragraphs.append(text)
+
+        material = "\n\n".join(
+            paragraphs
+        ).strip()
+
+        # Удаляем временный файл
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
+
+        # Проверяем результат
+        if not material:
+
+            await update.message.reply_text(
+
+                "⚠️ <b>DOCX не содержит доступного текста.</b>\n\n"
+                "Попробуйте другой документ.",
+
+                parse_mode="HTML"
+            )
+
+            return
+
+        # Сохраняем материал
+        user_id = update.effective_user.id
+
+        materials[user_id] = material
+
+        print(
+            "✅ Текст DOCX извлечён",
+            flush=True
+        )
+
+        print(
+            f"📝 Размер текста: {len(material)} символов",
+            flush=True
+        )
+
+        print(
+            "====================================",
+            flush=True
+        )
+
+        await update.message.reply_text(
+
+            "✅ <b>DOCX успешно обработан.</b>\n\n"
+
+            f"📄 Файл: {file_name}\n"
+            f"📝 Текста извлечено: {len(material)} символов\n\n"
+
+            "Теперь выберите, что нужно сделать:",
+
+            reply_markup=get_keyboard(),
+
+            parse_mode="HTML"
+        )
+
+    except Exception as error:
+
+        print(
+            "❌ DOCX ERROR:",
+            repr(error),
+            flush=True
+        )
+
+        traceback.print_exc()
+
+        await update.message.reply_text(
+
+            "❌ <b>Не удалось обработать DOCX.</b>\n\n"
+            "Попробуйте другой файл.",
+
+            parse_mode="HTML"
+        )
 
 # =========================================================
 # ИНСТРУКЦИИ ДЛЯ РЕЖИМОВ
@@ -1181,7 +1357,7 @@ def main():
         )
     )
 
-    # =====================================================
+# =====================================================
 # PDF
 # =====================================================
 
@@ -1190,6 +1366,18 @@ application.add_handler(
     MessageHandler(
         filters.Document.PDF,
         receive_pdf
+    )
+)
+
+# =====================================================
+# DOCX
+# =====================================================
+
+application.add_handler(
+
+    MessageHandler(
+        filters.Document.DOCX,
+        receive_docx
     )
 )
 
