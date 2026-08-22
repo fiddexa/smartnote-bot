@@ -1,8 +1,14 @@
 import os
 import tempfile
+import asyncio
 import traceback
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -12,6 +18,8 @@ from telegram.ext import (
     filters,
 )
 
+from google import genai
+from groq import Groq
 from openai import OpenAI
 
 
@@ -20,83 +28,120 @@ from openai import OpenAI
 # =========================================================
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 PORT = int(os.getenv("PORT", "10000"))
-
-RENDER_EXTERNAL_URL = os.getenv(
-    "RENDER_EXTERNAL_URL",
-    "https://smartnote-bot-gb2i.onrender.com"
-)
-
-# Модель можно изменить в Render Environment
-# через переменную OPENAI_MODEL
-OPENAI_MODEL = os.getenv(
-    "OPENAI_MODEL",
-    "gpt-5.6-luna"
-)
-
-# Модель распознавания голоса
-TRANSCRIBE_MODEL = os.getenv(
-    "TRANSCRIBE_MODEL",
-    "gpt-4o-mini-transcribe"
-)
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 
 # =========================================================
-# ПРОВЕРКА НАСТРОЕК
+# ПРОВЕРКА TELEGRAM
 # =========================================================
 
 if not TELEGRAM_TOKEN:
     raise RuntimeError(
-        "❌ TELEGRAM_TOKEN не найден в Environment"
+        "❌ TELEGRAM_TOKEN не найден в Environment Variables"
     )
 
-if not OPENAI_API_KEY:
-    raise RuntimeError(
-        "❌ OPENAI_API_KEY не найден в Environment"
-    )
+
+# =========================================================
+# ПРОВЕРКА RENDER
+# =========================================================
 
 if not RENDER_EXTERNAL_URL:
     raise RuntimeError(
-        "❌ RENDER_EXTERNAL_URL не найден"
+        "❌ RENDER_EXTERNAL_URL не найден в Environment Variables"
     )
 
 
 # =========================================================
-# OPENAI CLIENT
+# AI КЛИЕНТЫ
 # =========================================================
 
-client = OpenAI(
-    api_key=OPENAI_API_KEY
-)
+gemini_client = None
+groq_client = None
+openrouter_client = None
+
+
+if GEMINI_API_KEY:
+
+    try:
+
+        gemini_client = genai.Client(
+            api_key=GEMINI_API_KEY
+        )
+
+        print(
+            "✅ Gemini API подключен",
+            flush=True
+        )
+
+    except Exception as error:
+
+        print(
+            "❌ Gemini initialization error:",
+            repr(error),
+            flush=True
+        )
+
+
+if GROQ_API_KEY:
+
+    try:
+
+        groq_client = Groq(
+            api_key=GROQ_API_KEY
+        )
+
+        print(
+            "✅ Groq API подключен",
+            flush=True
+        )
+
+    except Exception as error:
+
+        print(
+            "❌ Groq initialization error:",
+            repr(error),
+            flush=True
+        )
+
+
+if OPENROUTER_API_KEY:
+
+    try:
+
+        openrouter_client = OpenAI(
+            api_key=OPENROUTER_API_KEY,
+            base_url="https://openrouter.ai/api/v1"
+        )
+
+        print(
+            "✅ OpenRouter API подключен",
+            flush=True
+        )
+
+    except Exception as error:
+
+        print(
+            "❌ OpenRouter initialization error:",
+            repr(error),
+            flush=True
+        )
 
 
 # =========================================================
-# ВРЕМЕННОЕ ХРАНИЛИЩЕ МАТЕРИАЛОВ
+# ХРАНИЛИЩЕ МАТЕРИАЛОВ
 # =========================================================
 
 materials = {}
 
 
 # =========================================================
-# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ
-# =========================================================
-
-def split_text(text, chunk_size=3800):
-    """
-    Разбивает длинный текст на части,
-    чтобы не превысить лимит Telegram.
-    """
-
-    return [
-        text[i:i + chunk_size]
-        for i in range(0, len(text), chunk_size)
-    ]
-
-
-# =========================================================
-# КОМАНДА /START
+# START
 # =========================================================
 
 async def start(
@@ -112,8 +157,8 @@ async def start(
         "🎤 <b>голосовым сообщением</b>\n"
         "📝 <b>текстом</b>\n\n"
 
-        "Я помогу превратить его "
-        "в удобный материал для обучения.\n\n"
+        "Я помогу превратить его в удобный "
+        "материал для обучения.\n\n"
 
         "После загрузки доступны:\n\n"
 
@@ -132,7 +177,7 @@ async def start(
 
 
 # =========================================================
-# КНОПКИ
+# КЛАВИАТУРА
 # =========================================================
 
 def get_keyboard():
@@ -174,6 +219,7 @@ def get_keyboard():
                 callback_data="simple"
             ),
         ],
+
     ]
 
     return InlineKeyboardMarkup(keyboard)
@@ -190,29 +236,33 @@ async def receive_text(
 
     try:
 
-        user_id = update.effective_user.id
-
-        if not update.message or not update.message.text:
+        if not update.message:
             return
+
+        if not update.message.text:
+            return
+
+        user_id = update.effective_user.id
 
         text = update.message.text.strip()
 
         if not text:
             return
 
-        # Сохраняем материал
         materials[user_id] = text
 
         print(
-            f"📝 Получен текст от пользователя {user_id}. "
-            f"Длина: {len(text)} символов",
+            f"📥 Получен текст от пользователя {user_id}",
             flush=True
         )
 
         await update.message.reply_text(
+
             "✅ <b>Материал получен.</b>\n\n"
             "Теперь выберите, что нужно сделать:",
+
             reply_markup=get_keyboard(),
+
             parse_mode="HTML"
         )
 
@@ -226,12 +276,47 @@ async def receive_text(
 
         traceback.print_exc()
 
-        if update.message:
 
-            await update.message.reply_text(
-                "❌ Произошла ошибка при получении текста.\n\n"
-                "Попробуйте ещё раз."
+# =========================================================
+# РАСПОЗНАВАНИЕ ГОЛОСА
+# =========================================================
+
+async def transcribe_voice(
+    audio_path
+):
+
+    if not groq_client:
+
+        raise RuntimeError(
+            "GROQ_API_KEY не настроен. "
+            "Для голосовых сообщений нужен Groq."
+        )
+
+    def do_transcription():
+
+        with open(
+            audio_path,
+            "rb"
+        ) as audio_file:
+
+            result = groq_client.audio.transcriptions.create(
+
+                file=audio_file,
+
+                model="whisper-large-v3-turbo",
+
+                language="ru",
+
+                response_format="json",
+
+                temperature=0
             )
+
+        return result.text.strip()
+
+    return await asyncio.to_thread(
+        do_transcription
+    )
 
 
 # =========================================================
@@ -246,29 +331,21 @@ async def receive_voice(
     user_id = update.effective_user.id
 
     await update.message.reply_text(
-        "🎤 Получил голосовое сообщение.\n"
-        "⏳ Распознаю речь..."
+        "🎤 <b>Голосовое получено.</b>\n\n"
+        "⏳ Распознаю речь...",
+        parse_mode="HTML"
     )
 
     voice = update.message.voice
 
-    telegram_file = None
     audio_path = None
 
     try:
 
-        print(
-            f"🎤 Начинаю обработку голосового "
-            f"от пользователя {user_id}",
-            flush=True
-        )
-
-        # Получаем файл Telegram
         telegram_file = await context.bot.get_file(
             voice.file_id
         )
 
-        # Создаём временный файл
         with tempfile.NamedTemporaryFile(
             suffix=".ogg",
             delete=False
@@ -276,71 +353,58 @@ async def receive_voice(
 
             audio_path = temp.name
 
-        # Скачиваем голосовое
         await telegram_file.download_to_drive(
             audio_path
         )
 
         print(
-            f"🎤 Голосовой файл скачан: {audio_path}",
+            f"🎤 Распознавание голосового: {audio_path}",
             flush=True
         )
 
-        # Открываем аудио
-        with open(
-            audio_path,
-            "rb"
-        ) as audio:
-
-            transcription = (
-                client.audio.transcriptions.create(
-                    model=TRANSCRIBE_MODEL,
-                    file=audio,
-                    language="ru"
-                )
-            )
-
-        text = transcription.text.strip()
-
-        print(
-            f"🎤 Распознавание завершено. "
-            f"Длина текста: {len(text)}",
-            flush=True
+        text = await transcribe_voice(
+            audio_path
         )
 
         if not text:
 
             await update.message.reply_text(
-                "❌ Не удалось получить текст "
-                "из голосового сообщения."
+                "❌ Не удалось распознать голосовое сообщение."
             )
 
             return
 
-        # Сохраняем материал
         materials[user_id] = text
 
-        # Показываем первые 3000 символов
         preview = text[:3000]
 
         if len(text) > 3000:
+
             preview += "\n\n…"
 
         await update.message.reply_text(
-            "🎤 <b>Голос успешно распознан.</b>\n\n"
+
+            "✅ <b>Голос успешно распознан.</b>\n\n"
+
             "📄 <b>Распознанный текст:</b>\n\n"
-            f"{preview}\n\n"
+
+            + preview
+
+            + "\n\n"
             "Выберите, что сделать с материалом:",
+
             reply_markup=get_keyboard(),
+
             parse_mode="HTML"
         )
 
-    except Exception as error:
-
         print(
-            "====================================",
+            f"✅ Голос успешно распознан "
+            f"для пользователя {user_id}",
             flush=True
         )
+
+    except Exception as error:
 
         print(
             "❌ VOICE ERROR:",
@@ -350,20 +414,14 @@ async def receive_voice(
 
         traceback.print_exc()
 
-        print(
-            "====================================",
-            flush=True
-        )
-
         await update.message.reply_text(
-            "❌ Произошла ошибка при обработке "
-            "голосового сообщения.\n\n"
-            "Попробуйте ещё раз."
+
+            "❌ Не удалось обработать голосовое сообщение.\n\n"
+            "Проверьте настройки GROQ_API_KEY."
         )
 
     finally:
 
-        # Удаляем временный файл
         if (
             audio_path
             and os.path.exists(audio_path)
@@ -371,31 +429,24 @@ async def receive_voice(
 
             try:
 
-                os.remove(audio_path)
-
-                print(
-                    "🗑 Временный аудиофайл удалён.",
-                    flush=True
+                os.remove(
+                    audio_path
                 )
 
-            except Exception as cleanup_error:
-
-                print(
-                    "⚠️ Не удалось удалить "
-                    "временный файл:",
-                    repr(cleanup_error),
-                    flush=True
-                )
+            except Exception:
+                pass
 
 
 # =========================================================
-# ПРОМПТЫ
+# PROMPTS
 # =========================================================
 
-PROMPTS = {
+prompts = {
 
-    "referat": """
-Создай качественный реферат по предоставленному материалу.
+    "referat":
+        """
+Создай качественный учебный реферат
+по предоставленному материалу.
 
 Структура:
 
@@ -405,17 +456,19 @@ PROMPTS = {
 4. Основные идеи
 5. Заключение
 
-Требования:
+Пиши связно, грамотно и понятно.
 
-- Пиши связно и понятно.
-- Сохраняй важную информацию исходного материала.
-- Не выдумывай факты.
-- Не добавляй сведения, которых нет в материале,
-  если они не нужны для понимания.
-- Используй логичную структуру.
+Не выдумывай факты.
+
+Основывайся прежде всего
+на предоставленном материале.
+
+Если информации недостаточно,
+не добавляй выдуманные сведения.
 """,
 
-    "conspect": """
+    "conspect":
+        """
 Создай подробный структурированный конспект.
 
 Используй:
@@ -429,29 +482,24 @@ PROMPTS = {
 - выводы.
 
 Конспект должен быть удобен
-для последующего изучения и повторения.
-
-Не выдумывай отсутствующую информацию.
+для последующего изучения.
 """,
 
-    "summary": """
-Сделай краткую и очень полезную выжимку материала.
+    "summary":
+        """
+Сделай краткую и очень полезную
+выжимку материала.
 
-Оставь только действительно важную информацию.
+Оставь только действительно
+важную информацию.
 
-Убери:
-
-- повторы;
-- второстепенные детали;
-- лишние пояснения.
+Убери повторы и второстепенные детали.
 
 Сохрани основной смысл материала.
-
-В начале дай краткое резюме темы,
-а затем перечисли ключевые факты.
 """,
 
-    "theses": """
+    "theses":
+        """
 Выдели главные тезисы материала.
 
 Сделай от 5 до 20 коротких,
@@ -459,52 +507,412 @@ PROMPTS = {
 
 Каждый тезис должен передавать
 отдельную важную мысль.
-
-Не повторяй одну и ту же мысль разными словами.
 """,
 
-    "questions": """
+    "questions":
+        """
 Создай вопросы для проверки знаний
 по предоставленному материалу.
 
-Сделай вопросы разного уровня сложности:
-
-1. Простые
-2. Средние
-3. Сложные
+Сделай вопросы разного уровня сложности.
 
 После каждого вопроса
 дай правильный ответ.
 
-В конце добавь:
-
-"⭐ 5 главных вопросов для подготовки"
-
-и выбери 5 наиболее важных вопросов.
+В конце добавь 5 наиболее важных
+вопросов для подготовки к экзамену.
 """,
 
-    "simple": """
+    "simple":
+        """
 Объясни материал простыми словами.
 
-Представь, что человек впервые
-изучает эту тему.
+Представь, что человек
+впервые изучает эту тему.
 
-Сложные термины объясняй понятным языком.
+Сложные термины объясняй
+понятным языком.
 
 Используй простые примеры,
 если они помогают понять тему.
 
 Не искажай исходную информацию.
-
-В конце сделай короткий блок:
-
-"💡 Главное, что нужно запомнить"
 """
 }
 
 
 # =========================================================
-# ОБРАБОТКА МАТЕРИАЛА
+# GEMINI
+# =========================================================
+
+async def ask_gemini(
+    instruction,
+    material
+):
+
+    if not gemini_client:
+
+        raise RuntimeError(
+            "Gemini API не настроен."
+        )
+
+    full_prompt = (
+
+        "Ты — SmartNote AI, "
+        "интеллектуальный учебный ассистент.\n\n"
+
+        "Работай прежде всего "
+        "с материалом пользователя.\n"
+
+        "Не выдумывай факты.\n"
+
+        "Не добавляй информацию, "
+        "которой нет в материале, "
+        "если она не нужна для объяснения.\n"
+
+        "Отвечай на русском языке.\n"
+
+        "Используй понятную структуру.\n\n"
+
+        + instruction
+
+        + "\n\n"
+        "МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ:\n\n"
+
+        + material
+    )
+
+    def generate():
+
+        response = gemini_client.models.generate_content(
+
+            model="gemini-2.5-flash-lite",
+
+            contents=full_prompt
+        )
+
+        return response.text
+
+    result = await asyncio.to_thread(
+        generate
+    )
+
+    if not result:
+
+        raise RuntimeError(
+            "Gemini вернул пустой ответ."
+        )
+
+    return result.strip()
+
+
+# =========================================================
+# GROQ
+# =========================================================
+
+async def ask_groq(
+    instruction,
+    material
+):
+
+    if not groq_client:
+
+        raise RuntimeError(
+            "Groq API не настроен."
+        )
+
+    system_prompt = """
+Ты — SmartNote AI,
+интеллектуальный учебный ассистент.
+
+Работай прежде всего
+с материалом пользователя.
+
+Не выдумывай факты.
+
+Если информации недостаточно,
+не придумывай отсутствующие сведения.
+
+Отвечай на русском языке.
+
+Используй понятную структуру.
+"""
+
+    user_prompt = (
+        instruction
+        + "\n\n"
+        + "МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ:\n\n"
+        + material
+    )
+
+    def generate():
+
+        response = groq_client.chat.completions.create(
+
+            model="llama-3.3-70b-versatile",
+
+            messages=[
+
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+
+                {
+                    "role": "user",
+                    "content": user_prompt
+                }
+
+            ],
+
+            temperature=0.2
+        )
+
+        return response.choices[
+            0
+        ].message.content
+
+    result = await asyncio.to_thread(
+        generate
+    )
+
+    if not result:
+
+        raise RuntimeError(
+            "Groq вернул пустой ответ."
+        )
+
+    return result.strip()
+
+
+# =========================================================
+# OPENROUTER FREE
+# =========================================================
+
+async def ask_openrouter(
+    instruction,
+    material
+):
+
+    if not openrouter_client:
+
+        raise RuntimeError(
+            "OpenRouter API не настроен."
+        )
+
+    system_prompt = """
+Ты — SmartNote AI,
+интеллектуальный учебный ассистент.
+
+Работай прежде всего
+с материалом пользователя.
+
+Не выдумывай факты.
+
+Отвечай на русском языке.
+
+Используй понятную структуру.
+"""
+
+    user_prompt = (
+        instruction
+        + "\n\n"
+        + "МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ:\n\n"
+        + material
+    )
+
+    def generate():
+
+        response = openrouter_client.chat.completions.create(
+
+            model="openrouter/free",
+
+            messages=[
+
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+
+                {
+                    "role": "user",
+                    "content": user_prompt
+                }
+
+            ],
+
+            temperature=0.2
+        )
+
+        return response.choices[
+            0
+        ].message.content
+
+    result = await asyncio.to_thread(
+        generate
+    )
+
+    if not result:
+
+        raise RuntimeError(
+            "OpenRouter вернул пустой ответ."
+        )
+
+    return result.strip()
+
+
+# =========================================================
+# AI СИСТЕМА С РЕЗЕРВНЫМИ ВАРИАНТАМИ
+# =========================================================
+
+async def generate_ai_result(
+    instruction,
+    material
+):
+
+    errors = []
+
+
+    # =====================================================
+    # 1. GEMINI
+    # =====================================================
+
+    if gemini_client:
+
+        try:
+
+            print(
+                "🤖 Пробуем Gemini...",
+                flush=True
+            )
+
+            result = await ask_gemini(
+                instruction,
+                material
+            )
+
+            print(
+                "✅ Ответ получен через Gemini",
+                flush=True
+            )
+
+            return result
+
+        except Exception as error:
+
+            print(
+                "⚠️ Gemini ERROR:",
+                repr(error),
+                flush=True
+            )
+
+            errors.append(
+                "Gemini: "
+                + repr(error)
+            )
+
+
+    # =====================================================
+    # 2. GROQ
+    # =====================================================
+
+    if groq_client:
+
+        try:
+
+            print(
+                "🤖 Пробуем Groq...",
+                flush=True
+            )
+
+            result = await ask_groq(
+                instruction,
+                material
+            )
+
+            print(
+                "✅ Ответ получен через Groq",
+                flush=True
+            )
+
+            return result
+
+        except Exception as error:
+
+            print(
+                "⚠️ Groq ERROR:",
+                repr(error),
+                flush=True
+            )
+
+            errors.append(
+                "Groq: "
+                + repr(error)
+            )
+
+
+    # =====================================================
+    # 3. OPENROUTER
+    # =====================================================
+
+    if openrouter_client:
+
+        try:
+
+            print(
+                "🤖 Пробуем OpenRouter Free...",
+                flush=True
+            )
+
+            result = await ask_openrouter(
+                instruction,
+                material
+            )
+
+            print(
+                "✅ Ответ получен через OpenRouter",
+                flush=True
+            )
+
+            return result
+
+        except Exception as error:
+
+            print(
+                "⚠️ OpenRouter ERROR:",
+                repr(error),
+                flush=True
+            )
+
+            errors.append(
+                "OpenRouter: "
+                + repr(error)
+            )
+
+
+    # =====================================================
+    # НИ ОДИН AI НЕ СРАБОТАЛ
+    # =====================================================
+
+    print(
+        "❌ ВСЕ AI ПРОВАЙДЕРЫ НЕДОСТУПНЫ",
+        flush=True
+    )
+
+    for error in errors:
+
+        print(
+            error,
+            flush=True
+        )
+
+    raise RuntimeError(
+        "Все AI-провайдеры недоступны."
+    )
+
+
+# =========================================================
+# ОБРАБОТКА КНОПОК
 # =========================================================
 
 async def process_material(
@@ -514,275 +922,141 @@ async def process_material(
 
     query = update.callback_query
 
-    if not query:
-        return
-
     await query.answer()
 
     user_id = query.from_user.id
 
-    material = materials.get(user_id)
-
-    # -----------------------------------------------------
-    # ПРОВЕРКА МАТЕРИАЛА
-    # -----------------------------------------------------
+    material = materials.get(
+        user_id
+    )
 
     if not material:
 
         await query.message.reply_text(
-            "❗ Сначала отправьте текст "
-            "или голосовое сообщение."
+
+            "❗ Сначала отправьте "
+            "текст или голосовое сообщение."
         )
 
         return
+
 
     action = query.data
 
-    instruction = PROMPTS.get(action)
+    instruction = prompts.get(
+        action
+    )
 
     if not instruction:
 
-        print(
-            f"❌ Неизвестная команда кнопки: {action}",
-            flush=True
-        )
-
         return
 
-    # -----------------------------------------------------
-    # СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЮ
-    # -----------------------------------------------------
 
     await query.message.reply_text(
-        "🧠 Анализирую материал...\n"
-        "⏳ Пожалуйста, подождите."
+
+        "🧠 <b>Анализирую материал...</b>\n\n"
+        "⏳ Пожалуйста, подождите.",
+
+        parse_mode="HTML"
     )
 
-    print(
-        "====================================",
-        flush=True
-    )
-
-    print(
-        f"🧠 Начинаю AI обработку",
-        flush=True
-    )
-
-    print(
-        f"👤 User ID: {user_id}",
-        flush=True
-    )
-
-    print(
-        f"🎯 Action: {action}",
-        flush=True
-    )
-
-    print(
-        f"🤖 Model: {OPENAI_MODEL}",
-        flush=True
-    )
-
-    print(
-        f"📄 Material length: {len(material)}",
-        flush=True
-    )
-
-    print(
-        "====================================",
-        flush=True
-    )
-
-    # -----------------------------------------------------
-    # ЗАПРОС К OPENAI
-    # -----------------------------------------------------
 
     try:
 
-        response = client.responses.create(
-
-            model=OPENAI_MODEL,
-
-            instructions=(
-                "Ты — SmartNote AI, "
-                "интеллектуальный учебный ассистент.\n\n"
-
-                "Твоя задача — помогать пользователю "
-                "изучать предоставленный материал.\n\n"
-
-                "Работай прежде всего "
-                "с материалом пользователя.\n\n"
-
-                "Не выдумывай факты.\n"
-
-                "Если в материале недостаточно информации, "
-                "не придумывай отсутствующие сведения.\n\n"
-
-                "Отвечай на русском языке.\n\n"
-
-                "Используй понятную структуру.\n\n"
-
-                "Если материал содержит ошибки или "
-                "неоднозначные утверждения, "
-                "не исправляй их молча — "
-                "при необходимости укажи на это."
-            ),
-
-            input=(
-                "ЗАДАНИЕ:\n\n"
-                + instruction
-                + "\n\n"
-                + "МАТЕРИАЛ ПОЛЬЗОВАТЕЛЯ:\n\n"
-                + material
-            )
-        )
-
-        # -------------------------------------------------
-        # ПОЛУЧАЕМ РЕЗУЛЬТАТ
-        # -------------------------------------------------
-
-        result = response.output_text.strip()
-
         print(
             "====================================",
             flush=True
         )
 
         print(
-            "✅ OPENAI RESPONSE ПОЛУЧЕН",
+            f"🧠 Новый AI запрос: {action}",
             flush=True
         )
 
         print(
-            f"📄 Result length: {len(result)}",
+            f"👤 User ID: {user_id}",
             flush=True
         )
 
         print(
-            "====================================",
+            f"📄 Размер материала: {len(material)} символов",
             flush=True
         )
 
-        # -------------------------------------------------
-        # ПРОВЕРКА ПУСТОГО ОТВЕТА
-        # -------------------------------------------------
+
+        result = await generate_ai_result(
+
+            instruction,
+
+            material
+        )
+
 
         if not result:
 
-            print(
-                "❌ OpenAI вернул пустой результат.",
-                flush=True
-            )
-
             await query.message.reply_text(
-                "❌ ИИ не вернул результат.\n\n"
-                "Попробуйте ещё раз."
+
+                "❌ ИИ не вернул результат."
             )
 
             return
 
-        # -------------------------------------------------
+
+        # =================================================
         # ОТПРАВКА РЕЗУЛЬТАТА ЧАСТЯМИ
-        # -------------------------------------------------
+        # =================================================
 
-        chunks = split_text(
-            result,
-            3800
-        )
+        chunk_size = 3800
 
-        print(
-            f"📤 Отправляю {len(chunks)} частей "
-            "пользователю.",
-            flush=True
-        )
-
-        for index, chunk in enumerate(
-            chunks,
-            start=1
+        for start_index in range(
+            0,
+            len(result),
+            chunk_size
         ):
+
+            chunk = result[
+                start_index:
+                start_index + chunk_size
+            ]
 
             await query.message.reply_text(
                 chunk
             )
 
-            print(
-                f"📤 Отправлена часть "
-                f"{index}/{len(chunks)}",
-                flush=True
-            )
 
         print(
-            "✅ Обработка успешно завершена.",
+            "✅ Результат отправлен пользователю",
             flush=True
         )
-
-    # -----------------------------------------------------
-    # ОШИБКА OPENAI
-    # -----------------------------------------------------
-
-    except Exception as error:
 
         print(
             "====================================",
             flush=True
         )
 
-        print(
-            "❌ OPENAI ERROR:",
-            repr(error),
-            flush=True
-        )
+
+    except Exception as error:
 
         print(
-            "❌ ERROR TYPE:",
-            type(error).__name__,
+            "❌ PROCESS ERROR:",
+            repr(error),
             flush=True
         )
 
         traceback.print_exc()
 
-        print(
-            "====================================",
-            flush=True
-        )
 
         await query.message.reply_text(
-            "❌ Произошла ошибка при обработке материала.\n\n"
-            "Техническая информация записана "
-            "в Render Logs."
+
+            "❌ <b>Не удалось обработать материал.</b>\n\n"
+
+            "Все доступные AI-сервисы сейчас "
+            "недоступны или достигли бесплатного лимита.\n\n"
+
+            "Попробуйте немного позже.",
+
+            parse_mode="HTML"
         )
-
-
-# =========================================================
-# ГЛОБАЛЬНЫЙ ОБРАБОТЧИК ОШИБОК
-# =========================================================
-
-async def error_handler(
-    update,
-    context
-):
-
-    print(
-        "====================================",
-        flush=True
-    )
-
-    print(
-        "❌ GLOBAL BOT ERROR:",
-        repr(context.error),
-        flush=True
-    )
-
-    traceback.print_exception(
-        type(context.error),
-        context.error,
-        context.error.__traceback__
-    )
-
-    print(
-        "====================================",
-        flush=True
-    )
 
 
 # =========================================================
@@ -792,37 +1066,19 @@ async def error_handler(
 def main():
 
     webhook_url = (
+
         RENDER_EXTERNAL_URL.rstrip("/")
         + "/telegram"
     )
 
+
     print(
         "====================================",
         flush=True
     )
 
     print(
-        "🧠 SmartNote AI запускается...",
-        flush=True
-    )
-
-    print(
-        f"🌐 Webhook: {webhook_url}",
-        flush=True
-    )
-
-    print(
-        f"🔌 Port: {PORT}",
-        flush=True
-    )
-
-    print(
-        f"🤖 AI Model: {OPENAI_MODEL}",
-        flush=True
-    )
-
-    print(
-        f"🎤 Transcription Model: {TRANSCRIBE_MODEL}",
+        "🧠 SmartNote AI запускается",
         flush=True
     )
 
@@ -831,75 +1087,109 @@ def main():
         flush=True
     )
 
-    # -----------------------------------------------------
-    # СОЗДАНИЕ APPLICATION
-    # -----------------------------------------------------
+    print(
+        "Webhook:",
+        webhook_url,
+        flush=True
+    )
+
+    print(
+        "Port:",
+        PORT,
+        flush=True
+    )
+
+    print(
+        "Gemini:",
+        "ON" if gemini_client else "OFF",
+        flush=True
+    )
+
+    print(
+        "Groq:",
+        "ON" if groq_client else "OFF",
+        flush=True
+    )
+
+    print(
+        "OpenRouter:",
+        "ON" if openrouter_client else "OFF",
+        flush=True
+    )
+
+    print(
+        "====================================",
+        flush=True
+    )
+
 
     application = (
+
         Application.builder()
-        .token(TELEGRAM_TOKEN)
+
+        .token(
+            TELEGRAM_TOKEN
+        )
+
         .build()
     )
 
-    # -----------------------------------------------------
-    # КОМАНДА /START
-    # -----------------------------------------------------
+
+    # =====================================================
+    # /START
+    # =====================================================
 
     application.add_handler(
+
         CommandHandler(
             "start",
             start
         )
     )
 
-    # -----------------------------------------------------
-    # ГОЛОСОВЫЕ
-    # -----------------------------------------------------
+
+    # =====================================================
+    # ГОЛОС
+    # =====================================================
 
     application.add_handler(
+
         MessageHandler(
             filters.VOICE,
             receive_voice
         )
     )
 
-    # -----------------------------------------------------
+
+    # =====================================================
     # ТЕКСТ
-    # -----------------------------------------------------
+    # =====================================================
 
     application.add_handler(
+
         MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
+            filters.TEXT
+            & ~filters.COMMAND,
             receive_text
         )
     )
 
-    # -----------------------------------------------------
-    # INLINE BUTTONS
-    # -----------------------------------------------------
+
+    # =====================================================
+    # КНОПКИ
+    # =====================================================
 
     application.add_handler(
+
         CallbackQueryHandler(
             process_material
         )
     )
 
-    # -----------------------------------------------------
-    # GLOBAL ERROR HANDLER
-    # -----------------------------------------------------
 
-    application.add_error_handler(
-        error_handler
-    )
-
-    # -----------------------------------------------------
+    # =====================================================
     # WEBHOOK
-    # -----------------------------------------------------
-
-    print(
-        "🚀 Запускаю Telegram webhook...",
-        flush=True
-    )
+    # =====================================================
 
     application.run_webhook(
 
@@ -916,8 +1206,9 @@ def main():
 
 
 # =========================================================
-# START
+# MAIN
 # =========================================================
 
 if __name__ == "__main__":
+
     main()
