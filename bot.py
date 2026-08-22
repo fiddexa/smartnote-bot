@@ -434,19 +434,25 @@ async def receive_photo(
         user_id = update.effective_user.id
 
         # =====================================================
-        # ВАЖНО:
-        # Группируем фотографии ПО ПОЛЬЗОВАТЕЛЮ,
-        # а не только по media_group_id.
-        #
-        # Это надёжнее для Telegram.
+        # ОПРЕДЕЛЯЕМ ПАКЕТ
         # =====================================================
+        #
+        # Если пользователь отправил несколько фото
+        # одним альбомом Telegram — у них будет одинаковый
+        # media_group_id.
+        #
+        # Если фото отправлено отдельно — используем user_id.
+        #
 
         media_group_id = update.message.media_group_id
 
         if media_group_id:
-        batch_id = f"album_{media_group_id}"
+
+            batch_id = f"{user_id}_{media_group_id}"
+
         else:
-        batch_id = f"single_{user_id}_{update.message.message_id}"
+
+            batch_id = str(user_id)
 
         # =====================================================
         # БЕРЁМ ФОТО МАКСИМАЛЬНОГО КАЧЕСТВА
@@ -477,13 +483,18 @@ async def receive_photo(
 
         print(
             f"🗂 Media Group ID: "
-            f"{update.message.media_group_id}",
+            f"{media_group_id}",
             flush=True
         )
 
         print(
             f"📐 Разрешение: "
             f"{photo.width}x{photo.height}",
+            flush=True
+        )
+
+        print(
+            f"📦 Batch ID: {batch_id}",
             flush=True
         )
 
@@ -501,7 +512,105 @@ async def receive_photo(
         image_bytes = await telegram_file.download_as_bytearray()
 
         # =====================================================
-        # СОЗДАЁМ ПАКЕТ ПОЛЬЗОВАТЕЛЯ
+        # ОПТИМИЗАЦИЯ ИЗОБРАЖЕНИЯ
+        # =====================================================
+
+        def optimize_image():
+
+            try:
+
+                from PIL import Image
+
+                image = Image.open(
+                    io.BytesIO(
+                        bytes(image_bytes)
+                    )
+                )
+
+                # Исправляем ориентацию фотографии
+                try:
+
+                    from PIL import ImageOps
+
+                    image = ImageOps.exif_transpose(
+                        image
+                    )
+
+                except Exception:
+                    pass
+
+                # Переводим в RGB
+                if image.mode != "RGB":
+
+                    image = image.convert(
+                        "RGB"
+                    )
+
+                # =================================================
+                # Максимальный размер одной стороны
+                # =================================================
+
+                max_dimension = 2200
+
+                if (
+                    image.width > max_dimension
+                    or
+                    image.height > max_dimension
+                ):
+
+                    image.thumbnail(
+                        (
+                            max_dimension,
+                            max_dimension
+                        ),
+                        Image.Resampling.LANCZOS
+                    )
+
+                # =================================================
+                # Сохраняем JPEG
+                # =================================================
+
+                output = io.BytesIO()
+
+                image.save(
+                    output,
+                    format="JPEG",
+                    quality=85,
+                    optimize=True
+                )
+
+                return output.getvalue()
+
+            except Exception as error:
+
+                print(
+                    "⚠️ IMAGE OPTIMIZATION ERROR:",
+                    repr(error),
+                    flush=True
+                )
+
+                # Если оптимизация не удалась,
+                # возвращаем оригинал
+                return bytes(image_bytes)
+
+        optimized_image = await asyncio.to_thread(
+            optimize_image
+        )
+
+        print(
+            f"📦 Исходный размер: "
+            f"{len(image_bytes)} байт",
+            flush=True
+        )
+
+        print(
+            f"📦 Оптимизированный размер: "
+            f"{len(optimized_image)} байт",
+            flush=True
+        )
+
+        # =====================================================
+        # СОЗДАЁМ ПАКЕТ
         # =====================================================
 
         if batch_id not in photo_batches:
@@ -514,16 +623,18 @@ async def receive_photo(
 
                 "message": update.message,
 
+                "media_group_id": media_group_id,
+
                 "started": asyncio.get_event_loop().time(),
 
             }
 
         # =====================================================
-        # ДОБАВЛЯЕМ ФОТО В ПАКЕТ
+        # ДОБАВЛЯЕМ ФОТО
         # =====================================================
 
         photo_batches[batch_id]["images"].append(
-            bytes(image_bytes)
+            optimized_image
         )
 
         image_count = len(
@@ -536,7 +647,39 @@ async def receive_photo(
         )
 
         # =====================================================
-        # ОТМЕНЯЕМ ПРЕДЫДУЩИЙ ТАЙМЕР
+        # ОГРАНИЧЕНИЕ
+        # =====================================================
+
+        MAX_PHOTOS = 10
+
+        if image_count > MAX_PHOTOS:
+
+            await update.message.reply_text(
+
+                f"❌ Слишком много фотографий.\n\n"
+                f"Максимум за один материал: "
+                f"{MAX_PHOTOS} фотографий.",
+
+                parse_mode="HTML"
+            )
+
+            photo_batches.pop(
+                batch_id,
+                None
+            )
+
+            old_task = photo_batch_tasks.pop(
+                batch_id,
+                None
+            )
+
+            if old_task:
+                old_task.cancel()
+
+            return
+
+        # =====================================================
+        # ОТМЕНЯЕМ СТАРЫЙ ТАЙМЕР
         # =====================================================
 
         old_task = photo_batch_tasks.get(
@@ -548,20 +691,26 @@ async def receive_photo(
             old_task.cancel()
 
         # =====================================================
-        # ЖДЁМ НОВЫЕ ФОТО
-        #
-        # Пока пользователь отправляет фотографии,
-        # таймер постоянно сбрасывается.
-        #
-        # Gemini НЕ запускается.
+        # НОВЫЙ ТАЙМЕР
         # =====================================================
+        #
+        # Ждём 10 секунд после последней фотографии.
+        #
+        # Если приходит следующая фотография —
+        # предыдущий таймер отменяется и запускается заново.
+        #
 
         async def wait_and_process():
 
             try:
 
-                # Ждём 5 секунд после ПОСЛЕДНЕЙ фотографии
-                await asyncio.sleep(5)
+                print(
+                    f"⏳ Ждём завершения пакета "
+                    f"{batch_id}",
+                    flush=True
+                )
+
+                await asyncio.sleep(10)
 
                 await process_photo_batch(
                     batch_id
@@ -569,10 +718,11 @@ async def receive_photo(
 
             except asyncio.CancelledError:
 
-                # Нормальная ситуация:
-                # пришло следующее фото,
-                # поэтому старый таймер отменяется.
-                pass
+                print(
+                    f"🔄 Таймер пакета {batch_id} "
+                    f"перезапущен",
+                    flush=True
+                )
 
             except Exception as error:
 
@@ -606,7 +756,7 @@ async def receive_photo(
                 "Попробуйте отправить её ещё раз.",
 
                 parse_mode="HTML"
-            )
+        )
 
 
 # =========================================================
